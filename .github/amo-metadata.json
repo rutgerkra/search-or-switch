@@ -1,0 +1,6 @@
+{
+  "version": {
+    "license": "MIT",
+    "approval_notes": "Plain HTML, CSS, and JavaScript; no bundling, minification, runtime dependencies, or remote code. Open the toolbar popup or use Shift+Command+K on macOS, Ctrl+Shift+K on Windows, or Ctrl+Shift+Space on Linux. Type to match open tabs and history; Enter switches tabs, opens a URL, or searches using Firefox's default engine. Tab on a site hint enters site-search mode. Automatic discovery requires optional HTTP(S) website access, requested through Allow website access. Test discovery on a normal HTTP(S) page; Firefox restricts access to privileged pages. Preferences can disable discovery, clear learned searches, and change the shortcut. Matching, learned definitions, and the bounded favicon cache stay local; no analytics, remote suggestions, or favicon requests. Discovery fetches advertised OpenSearch metadata only with granted access. No account is required."
+  }
+}

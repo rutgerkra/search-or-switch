@@ -84,6 +84,8 @@ npm run build        # Unpacked extension and unsigned ZIP in dist/
 
 The preview embeds the actual popup page at its native dimensions, with the example-data label outside the panel. It uses example data and does not control real tabs. Loading `manifest.json` directly in Firefox requires no build step. The ZIP is unsigned; permanent Firefox distribution requires Mozilla signing.
 
+After the initial Mozilla Add-ons listing and API secrets are configured, successful pushes to `main` automatically submit versioned updates. See [publishing setup and release behavior](docs/PUBLISHING.md).
+
 Optional isolated Firefox UI checks use `puppeteer-core`:
 
 ```sh

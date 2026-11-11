@@ -1,0 +1,101 @@
+name: Publish to Mozilla Add-ons
+
+on:
+  workflow_run:
+    workflows: [Checks]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Finish an upload already in progress; keep only the latest pending update.
+concurrency:
+  group: amo-listed
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Submit listed extension
+    if: >-
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
+      (github.event_name == 'workflow_run' &&
+       github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push' &&
+       github.event.workflow_run.head_repository.full_name == github.repository)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          package-manager-cache: false
+      - name: Check publishing credentials
+        id: credentials
+        env:
+          AMO_API_KEY: ${{ secrets.AMO_API_KEY }}
+          AMO_API_SECRET: ${{ secrets.AMO_API_SECRET }}
+        run: |
+          if [[ -z "$AMO_API_KEY" || -z "$AMO_API_SECRET" ]]; then
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Publishing is disabled until AMO_API_KEY and AMO_API_SECRET are configured."
+            echo "Mozilla submission skipped: add the AMO_API_KEY and AMO_API_SECRET repository secrets. See docs/PUBLISHING.md for the one-time setup." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Check the current main commit
+        id: head
+        if: steps.credentials.outputs.configured == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+        run: |
+          latest_sha="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq '.object.sha')"
+          if [[ "$latest_sha" == "$RELEASE_SHA" ]]; then
+            echo "current=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "current=false" >> "$GITHUB_OUTPUT"
+            echo "Mozilla submission skipped: a newer commit is already on main." >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - name: Run checks for a manual submission
+        if: steps.head.outputs.current == 'true' && github.event_name == 'workflow_dispatch'
+        run: npm test
+      - name: Build the release
+        if: steps.head.outputs.current == 'true'
+        env:
+          RELEASE_BUILD_NUMBER: ${{ github.run_number }}
+        run: npm run build
+      - name: Validate with Mozilla's linter
+        if: steps.head.outputs.current == 'true'
+        run: npm exec --yes --package=web-ext@10.8.0 -- web-ext lint --source-dir dist/extension --no-config-discovery
+      - name: Save the submitted package
+        if: steps.head.outputs.current == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: search-or-switch-amo-${{ github.run_number }}
+          path: dist/search-or-switch-*.zip
+          if-no-files-found: error
+          retention-days: 30
+      - name: Submit to Mozilla Add-ons
+        if: steps.head.outputs.current == 'true'
+        env:
+          WEB_EXT_API_KEY: ${{ secrets.AMO_API_KEY }}
+          WEB_EXT_API_SECRET: ${{ secrets.AMO_API_SECRET }}
+        run: >-
+          npm exec --yes --package=web-ext@10.8.0 -- web-ext sign
+          --source-dir dist/extension
+          --channel listed
+          --amo-metadata .github/amo-metadata.json
+          --approval-timeout 0
+          --no-config-discovery
+          --no-input
+      - name: Record the submission
+        if: steps.head.outputs.current == 'true'
+        run: |
+          version="$(node -p "JSON.parse(require('fs').readFileSync('dist/extension/manifest.json', 'utf8')).version")"
+          echo "Submitted Search or Switch $version to Mozilla Add-ons. Mozilla review and publication may follow after this workflow finishes." >> "$GITHUB_STEP_SUMMARY"
