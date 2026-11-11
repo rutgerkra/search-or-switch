@@ -12,7 +12,7 @@ An Arc-inspired, keyboard-first tab switcher for Firefox. Open the popup, type, 
 - Preview destinations with the arrow keys, including locally cached favicons.
 - Search using Firefox’s default search engine.
 - Create a tab only when you commit an address or search. Reuse the current Firefox Home/New Tab page when available.
-- Open with **Shift+Cmd+K** on macOS or **Ctrl+Shift+Space** on Windows/Linux, or use the toolbar button.
+- Open with **Shift+Cmd+K** on macOS, **Ctrl+Shift+K** on Windows, or **Ctrl+Shift+Space** on Linux, or use the toolbar button.
 - Edit, clear, or restore the shortcut in Firefox-style Preferences.
 - Follow the system’s light or dark appearance.
 
@@ -25,7 +25,7 @@ This project is in development and is not yet published on Mozilla Add-ons. It t
 1. Download or clone this repository.
 2. In Firefox, open `about:debugging#/runtime/this-firefox`.
 3. Choose **Load Temporary Add-on…** and select `manifest.json` from the project folder.
-4. Press **Shift+Cmd+K** / **Ctrl+Shift+Space**, or click **Search or Switch** in the toolbar.
+4. Press **Shift+Cmd+K** (macOS), **Ctrl+Shift+K** (Windows), or **Ctrl+Shift+Space** (Linux), or click **Search or Switch** in the toolbar.
 
 Pin the toolbar button for the wider popup layout. A temporary installation lasts until Firefox restarts. After changing source files, click **Reload** in `about:debugging` and reopen the popup.
 

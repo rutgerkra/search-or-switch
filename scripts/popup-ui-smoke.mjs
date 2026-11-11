@@ -67,7 +67,7 @@ async function openCase({contextUrl,shortcut,failShortcutUpdate=false,favicon,ca
       return {async get(key){return typeof key==='string'?{[key]:copy(data[key]??null)}:copy(data);},async set(values){Object.assign(data,copy(values));},async remove(key){calls.push(['storage-remove',scope,copy(key)]);for(const name of Array.isArray(key)?key:[key])delete data[name];},snapshot(){return copy(data);}};
     };
     const isMac=/Mac|iPhone|iPad/.test(navigator.platform);
-    const defaultShortcut=isMac?'Command+Shift+K':'Ctrl+Shift+Space';
+    const defaultShortcut=isMac?'Command+Shift+K':/^Win/.test(navigator.platform)?'Ctrl+Shift+K':'Ctrl+Shift+Space';
     let currentShortcut=shortcut??defaultShortcut;
     const api={
       runtime:{id:'input-commit-smoke@test'},
@@ -144,7 +144,7 @@ async function shortcutPlatform(page){
     isMac:window.__popupFake.isMac,
     primary:window.__popupFake.isMac?'Meta':'Control',
     defaultShortcut:window.__popupFake.defaultShortcut,
-    defaultDisplay:window.__popupFake.isMac?'⇧⌘K':'Ctrl+Shift+Space',
+    defaultDisplay:window.__popupFake.isMac?'⇧⌘K':window.__popupFake.defaultShortcut,
     customShortcut:window.__popupFake.isMac?'Command+Shift+U':'Alt+Shift+U',
     customDisplay:window.__popupFake.isMac?'⇧⌘U':'Alt+Shift+U',
   }));

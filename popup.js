@@ -21,7 +21,8 @@ let refreshVersion = 0;
 let announceTimer;
 let disposed = false;
 const isMac = /Mac|iPhone|iPad/.test(navigator.platform);
-const defaultShortcut = getDefaultShortcut({ isMac });
+const shortcutPlatform = { isMac, isWindows: /^Win/.test(navigator.platform) };
+const defaultShortcut = getDefaultShortcut(shortcutPlatform);
 let previewShortcut = defaultShortcut;
 const shortcutCommands = preview ? {
   async getAll() { return [{ name: "_execute_action", shortcut: previewShortcut }]; },
@@ -29,7 +30,7 @@ const shortcutCommands = preview ? {
   async reset() { previewShortcut = defaultShortcut; },
 } : api.commands;
 const shortcuts = ["getAll", "update", "reset"].every((name) => typeof shortcutCommands?.[name] === "function")
-  ? createShortcutSettings(shortcutCommands, { isMac }) : null;
+  ? createShortcutSettings(shortcutCommands, shortcutPlatform) : null;
 let currentShortcut = "";
 let stagedShortcut = "";
 let shortcutLoaded = false;
@@ -416,7 +417,7 @@ $("shortcut-input").addEventListener("keydown", (event) => {
     commitShortcut();
     return;
   }
-  const result = captureShortcut(event, { isMac });
+  const result = captureShortcut(event, shortcutPlatform);
   if (result.type === "leave") return;
   event.preventDefault();
   event.stopPropagation();

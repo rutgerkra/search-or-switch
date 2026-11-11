@@ -12,6 +12,7 @@ assert(!manifest.chrome_url_overrides, "The popup must not replace Firefox’s n
 assert.deepEqual(Object.keys(manifest.commands), ["_execute_action"]);
 assert.equal(manifest.commands._execute_action.suggested_key.mac, "Command+Shift+K");
 assert.equal(manifest.commands._execute_action.suggested_key.default, "Ctrl+Shift+Space");
+assert.equal(manifest.commands._execute_action.suggested_key.windows, "Ctrl+Shift+K");
 for (const file of ["popup.html", "popup.css", "icons/icon.svg", "popup.js", "popup-input.js", "history-search.js", "favicon-cache.js", "shortcut-settings.js", "core.js", "popup-tabs.js", "preview.js"]) await access(file);
 for (const file of ["popup.js", "popup-input.js", "history-search.js", "favicon-cache.js", "shortcut-settings.js", "core.js", "popup-tabs.js", "preview.js", "scripts/serve.mjs", "scripts/build.mjs", "scripts/popup-ui-smoke.mjs"]) {
   execFileSync(process.execPath, ["--check", file], { stdio: "inherit" });

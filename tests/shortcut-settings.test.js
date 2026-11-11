@@ -3,12 +3,14 @@ import assert from "node:assert/strict";
 import { captureShortcut, createShortcutSettings, formatShortcut, getDefaultShortcut, validateShortcut } from "../shortcut-settings.js";
 
 const mac = { isMac: true };
-const win = { isMac: false };
+const win = { isMac: false, isWindows: true };
+const linux = { isMac: false, isWindows: false };
 const key = (value, modifiers = {}) => ({ key: value, ...modifiers });
 
 test("defaults and native formatting distinguish Command from physical Mac Control", () => {
   assert.equal(getDefaultShortcut(mac), "Command+Shift+K");
-  assert.equal(getDefaultShortcut(win), "Ctrl+Shift+Space");
+  assert.equal(getDefaultShortcut(win), "Ctrl+Shift+K");
+  assert.equal(getDefaultShortcut(linux), "Ctrl+Shift+Space");
   assert.equal(formatShortcut("Command+Shift+K", mac), "⇧⌘K");
   assert.equal(formatShortcut("Ctrl+Shift+K", mac), "⇧⌘K");
   assert.equal(formatShortcut("MacCtrl+Alt+Up", mac), "⌃⌥↑");
@@ -32,6 +34,9 @@ test("capture serializes Meta, physical Control, Alt, and Shift into Firefox tok
   });
   assert.deepEqual(captureShortcut(key(" ", { ctrlKey: true, shiftKey: true }), win), {
     type: "shortcut", shortcut: "Ctrl+Shift+Space", display: "Ctrl+Shift+Space",
+  });
+  assert.deepEqual(captureShortcut(key("k", { ctrlKey: true, shiftKey: true }), win), {
+    type: "shortcut", shortcut: "Ctrl+Shift+K", display: "Ctrl+Shift+K",
   });
 });
 
@@ -79,6 +84,8 @@ test("known native Firefox bindings are rejected while the extension defaults re
   for (const shortcut of ["Ctrl+L", "Ctrl+T", "Ctrl+W", "Ctrl+R", "Ctrl+Shift+T"]) assert.equal(validateShortcut(shortcut, win).valid, false);
   assert.equal(validateShortcut(getDefaultShortcut(mac), mac).valid, true);
   assert.equal(validateShortcut(getDefaultShortcut(win), win).valid, true);
+  assert.equal(validateShortcut(getDefaultShortcut(linux), linux).valid, true);
+  assert.equal(validateShortcut("Ctrl+Shift+K", linux).valid, false);
   assert.equal(validateShortcut("MacCtrl+K", mac).valid, true);
   // The helper checks known Firefox bindings, not operating-system reservations.
   assert.equal(validateShortcut("Command+Shift+Q", mac).valid, true);

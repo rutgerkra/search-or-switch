@@ -12,8 +12,8 @@ const DISPLAY_KEYS = { Comma: ",", Period: ".", PageUp: "Page Up", PageDown: "Pa
 const GRAMMAR_MESSAGE = "Use Ctrl, Alt, or Command with a letter, number, or supported key.";
 const CONFLICT_MESSAGE = "Firefox uses this shortcut. Try another combination.";
 
-export function getDefaultShortcut({ isMac = false } = {}) {
-  return isMac ? "Command+Shift+K" : "Ctrl+Shift+Space";
+export function getDefaultShortcut({ isMac = false, isWindows = false } = {}) {
+  return isMac ? "Command+Shift+K" : isWindows ? "Ctrl+Shift+K" : "Ctrl+Shift+Space";
 }
 
 function isFunctionKey(key) {
@@ -28,13 +28,13 @@ function effectiveModifiers(modifiers, isMac) {
   return modifiers.map((modifier) => isMac && modifier === "Ctrl" ? "Command" : modifier);
 }
 
-function knownFirefoxConflict(modifiers, key, isMac) {
+function knownFirefoxConflict(modifiers, key, isMac, isWindows) {
   const effective = effectiveModifiers(modifiers, isMac);
   const main = isMac ? "Command" : "Ctrl";
   const hasOnly = (...expected) => effective.length === expected.length && expected.every((modifier) => effective.includes(modifier));
   if (hasOnly(main) && (new Set(["A", "C", "F", "G", "K", "L", "N", "O", "P", "Q", "R", "S", "T", "V", "W", "X", "Z"]).has(key) || /^[0-9]$/.test(key))) return true;
   if (hasOnly(main, "Shift") && ["N", "P", "R", "T", "W", "Z"].includes(key)) return true;
-  if (!isMac && hasOnly("Ctrl", "Shift") && ["J", "K", "Q"].includes(key)) return true;
+  if (!isMac && hasOnly("Ctrl", "Shift") && (["J", "Q"].includes(key) || (key === "K" && !isWindows))) return true;
   if (isMac && hasOnly("Command", "Alt") && ["C", "I", "K"].includes(key)) return true;
   if (!isMac && hasOnly("Alt") && ["Left", "Right", "Home"].includes(key)) return true;
   if (isMac && hasOnly("Command") && ["Left", "Right", "Up", "Down"].includes(key)) return true;
@@ -43,7 +43,7 @@ function knownFirefoxConflict(modifiers, key, isMac) {
 }
 
 /** Checks a Firefox commands shortcut, plus a small set of known native conflicts. */
-export function validateShortcut(shortcut, { isMac = false } = {}) {
+export function validateShortcut(shortcut, { isMac = false, isWindows = false } = {}) {
   if (typeof shortcut !== "string" || !shortcut || shortcut.trim() !== shortcut) return { valid: false, message: GRAMMAR_MESSAGE };
   const tokens = shortcut.split("+");
   const key = tokens.at(-1);
@@ -56,7 +56,7 @@ export function validateShortcut(shortcut, { isMac = false } = {}) {
     && new Set(effectiveModifiers(modifiers, isMac)).size === modifiers.length
     && supportedKey(key);
   if (!standalone && !combination) return { valid: false, message: GRAMMAR_MESSAGE };
-  if (knownFirefoxConflict(modifiers, key, isMac)) return { valid: false, message: CONFLICT_MESSAGE };
+  if (knownFirefoxConflict(modifiers, key, isMac, isWindows)) return { valid: false, message: CONFLICT_MESSAGE };
   return { valid: true };
 }
 
@@ -74,7 +74,7 @@ export function formatShortcut(shortcut, { isMac = false } = {}) {
 }
 
 /** Pure recorder: callers decide which events to prevent; Tab is never trapped here. */
-export function captureShortcut(event, { isMac = false } = {}) {
+export function captureShortcut(event, { isMac = false, isWindows = false } = {}) {
   if (!event || event.isComposing || event.keyCode === 229 || event.repeat
     || ["Process", "Dead", "Unidentified"].includes(event.key)
     || event.getModifierState?.("AltGraph")) return { type: "ignore" };
@@ -92,14 +92,14 @@ export function captureShortcut(event, { isMac = false } = {}) {
   if (event.altKey) modifiers.push("Alt");
   if (event.shiftKey) modifiers.push("Shift");
   const shortcut = [...modifiers, key].join("+");
-  const result = validateShortcut(shortcut, { isMac });
+  const result = validateShortcut(shortcut, { isMac, isWindows });
   return result.valid
     ? { type: "shortcut", shortcut, display: formatShortcut(shortcut, { isMac }) }
     : { type: "invalid", message: result.message };
 }
 
 /** Serializes changes to this extension's popup command and reads back Firefox's value. */
-export function createShortcutSettings(commands, { isMac = false } = {}) {
+export function createShortcutSettings(commands, { isMac = false, isWindows = false } = {}) {
   if (!["getAll", "update", "reset"].every((name) => typeof commands?.[name] === "function")) {
     throw new Error("Firefox shortcut settings are unavailable.");
   }
@@ -121,7 +121,7 @@ export function createShortcutSettings(commands, { isMac = false } = {}) {
   return {
     read: () => enqueue(readCurrent),
     save(shortcut) {
-      const validation = validateShortcut(shortcut, { isMac });
+      const validation = validateShortcut(shortcut, { isMac, isWindows });
       if (!validation.valid) return Promise.reject(new Error(validation.message));
       return enqueue(async () => {
         try { await commands.update({ name: COMMAND_NAME, shortcut }); }

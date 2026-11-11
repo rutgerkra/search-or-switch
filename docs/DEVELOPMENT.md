@@ -2,7 +2,7 @@
 
 A keyboard-first Firefox toolbar popup: **one shortcut → type → Enter → close**. Find an open tab, reopen a page from history, or open an address or web search.
 
-Default shortcuts are **⇧⌘K** on macOS and **Ctrl+Shift+Space** on Windows/Linux; the toolbar button also opens the popup. The popup requests input focus as it opens. Opening and typing create no tabs. Committing an address or search reuses the current Firefox Home/New Tab page when it is still available; otherwise it creates one destination tab in the current window. Selecting an existing tab activates it and dismisses the popup.
+Default shortcuts are **⇧⌘K** on macOS, **Ctrl+Shift+K** on Windows, and **Ctrl+Shift+Space** on Linux; the toolbar button also opens the popup. The popup requests input focus as it opens. Opening and typing create no tabs. Committing an address or search reuses the current Firefox Home/New Tab page when it is still available; otherwise it creates one destination tab in the current window. Selecting an existing tab activates it and dismisses the popup.
 
 The interface uses Firefox-style controls, neutral colors, system fonts, and light/dark appearance. Firefox anchors the native popup to its toolbar. Escape or clicking elsewhere dismisses it.
 
@@ -12,7 +12,7 @@ Built with plain HTML, CSS, and JavaScript. No runtime dependencies, remote asse
 
 1. Open `about:debugging#/runtime/this-firefox`.
 2. Choose **Load Temporary Add-on…** and select this folder’s `manifest.json`.
-3. Press **⇧⌘K** / **Ctrl+Shift+Space**, or click **Search or Switch** in the toolbar. Pin its button from Firefox’s extensions menu if needed.
+3. Press **⇧⌘K** (macOS), **Ctrl+Shift+K** (Windows), or **Ctrl+Shift+Space** (Linux), or click **Search or Switch** in the toolbar. Pin its button from Firefox’s extensions menu if needed.
 4. Type, use the arrow keys to choose a result, and press Enter.
 
 Pinning the button gives the popup its wider layout. When the button is unpinned, Firefox displays it inside the narrower Extensions menu; the shortcut works in either placement.

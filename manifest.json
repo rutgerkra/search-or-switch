@@ -18,6 +18,7 @@
     "_execute_action": {
       "suggested_key": {
         "default": "Ctrl+Shift+Space",
+        "windows": "Ctrl+Shift+K",
         "mac": "Command+Shift+K"
       },
       "description": "Open Search or Switch"
