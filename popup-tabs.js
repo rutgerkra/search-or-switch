@@ -1,7 +1,7 @@
 const REUSABLE_NEW_TAB_URLS = new Set(["about:newtab", "about:home"]);
 
-/** Firefox operations for a launcher. Existing tabs are never owned or removed. */
-export function createPopupController(api, { windowId } = {}) {
+/** Firefox operations for the native popup. Existing tabs are never owned or removed. */
+export function createPopupController(api) {
   let context;
   let initializing;
   let disposed = false;
@@ -86,23 +86,15 @@ export function createPopupController(api, { windowId } = {}) {
     assertAvailable();
     if (!initializing) {
       initializing = (async () => {
-        // A floating launcher has its own window. Keep its originating browser
-        // window explicit so results can never accidentally open in the launcher.
-        if (windowId !== undefined && (!Number.isInteger(windowId) || windowId < 0)) {
-          throw new Error("The original browser window could not be identified. Open Search or Switch again.");
-        }
         let activeTabs;
         try {
-          activeTabs = await api.tabs.query(windowId === undefined
-            ? { active: true, currentWindow: true }
-            : { active: true, windowId });
+          activeTabs = await api.tabs.query({ active: true, currentWindow: true });
         } catch {
           throw new Error("Firefox could not identify the original browser window. Open Search or Switch again to retry.");
         }
         assertAvailable();
         const active = activeTabs[0];
-        if (!Number.isInteger(active?.id) || active.id < 0 || !Number.isInteger(active?.windowId) || active.windowId < 0 ||
-          (windowId !== undefined && active.windowId !== windowId)) {
+        if (!Number.isInteger(active?.id) || active.id < 0 || !Number.isInteger(active?.windowId) || active.windowId < 0) {
           throw new Error("The original browser window is no longer available. Open Search or Switch from a Firefox browser window.");
         }
         context = { ...active };
@@ -254,19 +246,6 @@ export function createPopupController(api, { windowId } = {}) {
     });
   }
 
-  async function focusContext() {
-    return exclusively(async () => {
-      if (!api.windows?.update) {
-        throw new Error("Firefox window focus is unavailable. Return to the original browser window to see your destination.");
-      }
-      try {
-        return await api.windows.update(context.windowId, { focused: true });
-      } catch {
-        throw new Error("Firefox could not focus the original browser window. Any opened destination has been kept open.");
-      }
-    });
-  }
-
   function subscribe(listener) {
     assertAvailable();
     if (typeof listener !== "function") throw new TypeError("A tab change listener must be a function.");
@@ -281,7 +260,7 @@ export function createPopupController(api, { windowId } = {}) {
     subscribers.clear();
   }
 
-  return { initialize, refresh, switchTo, navigate, search, focusContext, subscribe, dispose };
+  return { initialize, refresh, switchTo, navigate, search, subscribe, dispose };
 }
 
 function isUntouchedBlank(tab) {

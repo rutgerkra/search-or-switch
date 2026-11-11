@@ -55,7 +55,7 @@ History lookups run locally through Firefox’s read-only search API; the extens
 Use Node.js 22.12 or newer. No `npm install` is needed.
 
 ```sh
-npm test             # Matching, tab operations, and preserved experiment tests
+npm test             # Matching, tab operations, and other unit tests
 npm run test:ui      # Optional headless Firefox UI checks (requires puppeteer-core)
 npm run check        # Manifest, syntax, CSP, and UI reference checks
 npm run dev          # http://127.0.0.1:4173 — popup preview with example tabs
@@ -63,7 +63,7 @@ npm run build        # dist/extension + dist/search-or-switch-0.1.0.zip
 npm run test:firefox  # Isolated Firefox smoke checks (Python 3, desktop Firefox)
 ```
 
-The normal-browser preview uses illustrative tabs, bundled example icons, and an in-memory shortcut assignment. It is labeled as a preview and never changes Firefox shortcuts or performs real tab/navigation actions. Load the extension in Firefox to test its native popup and keyboard behavior.
+The normal-browser preview embeds `popup.html` in a 560 × 480 frame, shrinking its width on narrow screens just as the native popup does. The surrounding `preview.html` page places its example-data label outside the panel, so the popup shares the extension’s markup, styles, and available content space. It uses illustrative tabs, bundled example icons, and an in-memory shortcut assignment, and never changes Firefox shortcuts or performs real tab/navigation actions. Load the extension in Firefox to test its native popup and keyboard behavior.
 
 The optional UI checks use desktop Firefox and `puppeteer-core` (tested with 25.17.0, which declares Node.js 22.12+). Install the test tool with `npm install --no-save --package-lock=false puppeteer-core@25.17.0`, or set `PUPPETEER_MODULE` to an existing module path. Set `FIREFOX_BIN` if needed. The checks run the actual popup in isolated headless Firefox with browser API fakes, local fixtures, and no remote requests. They cover tab actions and URL previews, Home/New Tab reuse, blank-document preservation, inline shortcut editing, and favicon rendering in the input and result rows. Favicon cases include Firefox’s base64 SVG format, URL-encoded SVG, cached destinations, and broken-image fallback.
 
@@ -73,7 +73,7 @@ Desktop keyboard verification of the installed Firefox 160 extension passed **op
 
 Firefox must finish opening the native popup before it can receive typing; input sent before its first render can be lost. Real search-engine submission and Firefox 140 still need native coverage. URL creation and search dispatch are covered with browser API fakes.
 
-The shortcut row was visually referenced against Firefox 160’s `about:keyboard` page, including its rounded field and pencil/clear controls. In the installed extension, × cleared the assignment, Restore brought back ⇧⌘K, and recording ⇧⌘U saved it when the keys were released. The replacement reopened the popup successfully. Clearing and restoring afterward left ⇧⌘K in place. The temporary debugging tab was closed and the original tabs were preserved. All 165 unit tests and 36 isolated Firefox UI checks pass, including clear failures, cancellation, recording, and the single-row layout at 300px.
+The shortcut row was visually referenced against Firefox 160’s `about:keyboard` page, including its rounded field and pencil/clear controls. In the installed extension, × cleared the assignment, Restore brought back ⇧⌘K, and recording ⇧⌘U saved it when the keys were released. The replacement reopened the popup successfully. Clearing and restoring afterward left ⇧⌘K in place. The temporary debugging tab was closed and the original tabs were preserved. Unit tests and isolated Firefox UI checks cover clear failures, cancellation, recording, and the single-row layout at 300px.
 
 The full-view Preferences layout was verified in Firefox 160, including the narrower unpinned popup. Its back button restored the selected tab’s address and subsequent arrow navigation restored the original typed query. The layout also passes light, dark, and narrow preview checks.
 
@@ -95,11 +95,12 @@ Native Firefox 160 verification also confirmed that committing a local address f
 | `popup-tabs.js` | Current-window identity, safe tab activation, and new-tab navigation/search. |
 | `core.js` | Pure ranking, privacy-safe display labels, and destination parsing. |
 | `preview.js` | Example tabs for browser preview only. |
+| `preview.html`, `preview.css` | Development-only page that frames the actual popup and labels the example data outside it. |
 | `icons/` | Bundled extension artwork. |
 | `tests/` | Node tests with deterministic race and failure coverage. |
 | `scripts/` | Checks, local preview, packaging, and optional Firefox smoke testing. |
 
-The primary package contains the popup runtime, shared modules, preview data, icons, and license. Experimental variants are excluded.
+The package contains the popup runtime, shared modules, preview data, icons, and license.
 
 ## Privacy and permissions
 
@@ -111,20 +112,6 @@ The primary package contains the popup runtime, shared modules, preview data, ic
 Tab matching stays local. Tab titles and full URLs are not logged or saved. The icon cache stores at most 64 site origins and inline images, each encoded image limited to 64 KiB, with no URL paths or queries. SVG icons are displayed exclusively as images, never inserted as document markup. It makes no favicon requests. Only a query you deliberately submit is passed to Firefox’s chosen search engine. There are no analytics. The content security policy blocks network connections from the extension UI.
 
 Firefox does not expose its full internal Places favicon cache through a public extension API. Icons for previously visited sites are available when an open tab supplies an inline icon or the extension cached one while the popup was open. Cached icons survive closing a tab and restarting Firefox. History search does not provide favicon images. See [Mozilla’s favicon API tracking issue](https://bugzilla.mozilla.org/show_bug.cgi?id=1315616).
-
-## Preserved experiments
-
-Earlier approaches remain available for comparison:
-
-| Variant | Manifest | Behavior |
-| --- | --- | --- |
-| Native sidebar | [`experiments/sidebar/manifest.json`](../experiments/sidebar/manifest.json) | Integrated Firefox pane. Firefox 160 testing required an extra focus step after opening. |
-| Floating window | [`experiments/floating/manifest.json`](../experiments/floating/manifest.json) | Separate window centered over Firefox, with the operating system’s window frame. |
-| Original ⌘T page | [`experiments/newtab/manifest.json`](../experiments/newtab/manifest.json) | Replaces the new-tab page; choosing an existing tab closes the temporary tab after activation. |
-
-To try one, remove the current temporary Search or Switch installation in `about:debugging`, then load that variant’s manifest. All variants use the same extension ID. Remove the experiment before loading the primary manifest again; temporary installations last until Firefox restarts.
-
-The new-tab experiment can leave native keyboard focus in Firefox’s address bar. The sidebar experiment can leave focus in the webpage. These observations are preserved with the experiments; native popup verification is tracked separately.
 
 ## Firefox verification
 

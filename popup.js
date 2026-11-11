@@ -11,7 +11,6 @@ const list = $("results");
 const queryIcon = $("query-icon");
 const api = globalThis.browser;
 const preview = !api?.runtime?.id;
-if (preview) document.documentElement.dataset.preview = "true";
 const state = { tabs: [], history: [], self: null, rows: [], selected: -1, query: "", previewSelection: false, selectionLost: false, composing: false, busy: false, ready: false };
 let faviconCache = createFaviconCache(undefined, { persist: false });
 let controller;
@@ -466,7 +465,6 @@ async function initialize() {
     state.tabs = previewTabs;
     void faviconCache.remember(previewTabs);
     state.self = { windowId: previewSelf.windowId };
-    $("below-palette").textContent = "Preview · example tabs and history";
     state.ready = true;
     render();
     return;

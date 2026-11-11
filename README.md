@@ -70,7 +70,7 @@ npm run dev          # Browser preview at http://127.0.0.1:4173
 npm run build        # Unpacked extension and unsigned ZIP in dist/
 ```
 
-The preview uses example data and does not control real tabs. Loading `manifest.json` directly in Firefox requires no build step. The ZIP is unsigned; permanent Firefox distribution requires Mozilla signing.
+The preview embeds the actual popup page at its native dimensions, with the example-data label outside the panel. It uses example data and does not control real tabs. Loading `manifest.json` directly in Firefox requires no build step. The ZIP is unsigned; permanent Firefox distribution requires Mozilla signing.
 
 Optional isolated Firefox UI checks use `puppeteer-core`:
 
@@ -80,9 +80,9 @@ npm run test:ui
 npm run test:firefox  # Python 3 and desktop Firefox; disposable profile
 ```
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for development and validation guidance, and the [development reference](docs/DEVELOPMENT.md) for implementation details and preserved experiments.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for development and validation guidance, and the [development reference](docs/DEVELOPMENT.md) for implementation details.
 
-The current suite has 165 unit tests and 36 isolated Firefox UI checks. The native shortcut, typing, selection, history, and tab-reuse flows have been tested in Firefox 160 on macOS. Firefox 140 and other operating systems still need native verification.
+The test suite includes unit tests and 36 isolated Firefox UI checks. The native shortcut, typing, selection, history, and tab-reuse flows have been tested in Firefox 160 on macOS. Firefox 140 and other operating systems still need native verification.
 
 ## License
 

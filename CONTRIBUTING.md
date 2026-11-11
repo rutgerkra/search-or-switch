@@ -43,6 +43,6 @@ For keyboard or navigation changes, verify **shortcut → type → arrow selecti
 - Keep matching and caches local. Display safe browser-supplied icons without remote requests.
 - Use Firefox-style controls, accessible names, visible focus, and system light/dark appearance.
 
-Earlier sidebar, floating-window, and new-tab implementations live in `experiments/`. They are excluded from the primary extension package, but their shared behavior remains covered by unit tests. See [the development reference](docs/DEVELOPMENT.md) for details.
+See [the development reference](docs/DEVELOPMENT.md) for implementation details.
 
 Do not include private browsing history, credentials, or account details in issue descriptions, logs, or screenshots. Contributions are licensed under the project’s [MIT license](LICENSE).

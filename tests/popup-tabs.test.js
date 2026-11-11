@@ -54,11 +54,6 @@ function fakeBrowser({ currentWindowId = 1 } = {}) {
       calls.push(["search", properties]);
       records.get(properties.tabId).url = "https://search.example/results?q=" + encodeURIComponent(properties.query);
     } },
-    windows: { async update(windowId, properties) {
-      calls.push(["focus", windowId, properties]);
-      if (![...records.values()].some((tab) => tab.windowId === windowId)) throw new Error("Window closed");
-      return { id: windowId, ...properties };
-    } },
   };
   return { api, records, calls };
 }
@@ -279,87 +274,14 @@ test("a closed popup window fails refresh without falling back to another window
   await assert.rejects(controller.refresh(), /window is no longer available/);
 });
 
-test("an explicit parent window controls all results instead of the floating launcher's current window", async () => {
-  const { api, calls, records } = fakeBrowser({ currentWindowId: 3 });
-  records.set(50, { id: 50, windowId: 3, active: true, url: "moz-extension://launcher/popup.html" });
-  const controller = createPopupController(api, { windowId: 1 });
-  const initial = await controller.initialize();
-  assert.equal(initial.context.id, 10);
-  assert.deepEqual(initial.tabs.map((tab) => tab.id), [10, 20]);
-  assert.deepEqual(calls[0], ["query", { active: true, windowId: 1 }]);
-  assert.equal(calls.some((call) => call[1]?.currentWindow), false);
-  await controller.switchTo(20);
-  await controller.navigate("https://destination.example/");
-  await controller.search("coffee");
-  assert.deepEqual(creations(calls).map((call) => call[1].windowId), [1, 1]);
-  assert.equal(records.get(50).url, "moz-extension://launcher/popup.html");
-  assert.deepEqual(removals(calls), []);
-  assert.deepEqual(calls.filter((call) => call[0] === "focus"), []);
-});
-
-test("focusContext focuses only the captured parent, as a separate step after tab work", async () => {
-  const { api, calls } = fakeBrowser();
-  const controller = createPopupController(api, { windowId: 2 });
-  await controller.initialize();
-  await controller.navigate("https://destination.example/");
-  assert.deepEqual(calls.filter((call) => call[0] === "focus"), []);
-  const focused = await controller.focusContext();
-  assert.deepEqual(focused, { id: 2, focused: true });
-  assert.deepEqual(calls.filter((call) => call[0] === "focus"), [["focus", 2, { focused: true }]]);
-  assert.deepEqual(creations(calls).map((call) => call[1].windowId), [2]);
-});
-
-test("invalid explicit parent identities never fall back to the launcher window", async () => {
-  for (const windowId of [-1, 1.5, "1", null, NaN]) {
-    const { api, calls } = fakeBrowser();
-    const controller = createPopupController(api, { windowId });
-    await assert.rejects(controller.initialize(), /original browser window could not be identified/);
-    assert.deepEqual(calls, []);
-  }
-});
-
-test("window ID zero is valid and remains explicit", async () => {
-  const { api, calls, records } = fakeBrowser();
+test("window ID zero is valid for the native popup", async () => {
+  const { api, calls, records } = fakeBrowser({ currentWindowId: 0 });
   records.set(0, { id: 0, windowId: 0, active: true, url: "https://zero.example/" });
-  const controller = createPopupController(api, { windowId: 0 });
+  const controller = createPopupController(api);
   assert.equal((await controller.initialize()).context.windowId, 0);
   await controller.navigate("https://destination.example/");
-  assert.deepEqual(calls[0], ["query", { active: true, windowId: 0 }]);
+  assert.deepEqual(calls[0], ["query", { active: true, currentWindow: true }]);
   assert.deepEqual(creations(calls).map((call) => call[1].windowId), [0]);
-});
-
-test("an unavailable explicit parent fails without querying or modifying another window", async () => {
-  const { api, calls } = fakeBrowser();
-  const controller = createPopupController(api, { windowId: 99 });
-  await assert.rejects(controller.initialize(), /original browser window is no longer available/);
-  assert.deepEqual(calls, [["query", { active: true, windowId: 99 }]]);
-});
-
-test("focus failure keeps the already-opened destination and all existing tabs", async () => {
-  const { controller, api, calls, records } = await initialized();
-  const destination = await controller.navigate("https://destination.example/");
-  api.windows.update = async () => { throw new Error("Window focus denied"); };
-  await assert.rejects(controller.focusContext(), /could not focus the original browser window/);
-  assert.equal(records.has(destination.id), true);
-  assert.equal(records.has(10), true);
-  assert.equal(records.has(20), true);
-  assert.deepEqual(removals(calls), []);
-});
-
-test("focusContext cannot run early while a commit is still in progress", async () => {
-  const { controller, api, calls } = await initialized();
-  let finish;
-  const create = api.tabs.create;
-  api.tabs.create = async (...args) => {
-    const tab = await create(...args);
-    await new Promise((resolve) => { finish = resolve; });
-    return tab;
-  };
-  const committing = controller.navigate("https://destination.example/");
-  await assert.rejects(controller.focusContext(), /already in progress/);
-  finish();
-  await committing;
-  assert.deepEqual(calls.filter((call) => call[0] === "focus"), []);
 });
 
 test("URL commits replace only the captured native new-tab or home placeholder", async () => {
