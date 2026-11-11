@@ -140,6 +140,9 @@ function bareHost(input) {
 export function resolveInput(value) {
   const input = String(value ?? "").trim();
   if (!input) return { type: "empty" };
+  if (/^about:/i.test(input)) {
+    return invalid("Open this address in Firefox's address bar. Firefox blocks extensions from opening privileged about: pages such as about:debugging.");
+  }
   if (BLOCKED_SCHEMES.test(input)) {
     return invalid("Use an http or https address, or enter a web search.");
   }

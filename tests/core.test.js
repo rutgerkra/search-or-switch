@@ -91,6 +91,13 @@ test("ordinary text, search operators, emails, and dotted multi-word queries rem
   }
 });
 
+test("Firefox internal addresses explain how to open the requested page manually", () => {
+  assert.deepEqual(resolveInput("about:debugging#/runtime/this-firefox"), {
+    type: "invalid",
+    message: "Open this address in Firefox's address bar. Firefox blocks extensions from opening privileged about: pages such as about:debugging.",
+  });
+});
+
 test("executable, privileged, and unsupported schemes are never navigation destinations", () => {
   for (const value of ["javascript:alert(1)", "JaVaScRiPt: alert(1)", "data:text/html,<h1>Hi</h1>", "file:///etc/passwd", "about:config", "view-source:https://example.com", "moz-extension://id/newtab.html", "ftp://example.com", "custom:handler", "//example.com"]) {
     assert.equal(resolveInput(value).type, "invalid", value);
