@@ -4,6 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="color-scheme" content="light dark">
+    <meta http-equiv="Content-Security-Policy" content="connect-src 'none'">
     <title>Search or Switch</title>
     <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
     <link rel="stylesheet" href="popup.css">
@@ -16,8 +17,10 @@
       <div class="palette" id="palette">
         <div class="search-bar">
           <span class="input-icon" id="query-icon" aria-hidden="true"></span>
-          <label class="sr-only" for="query">Search open tabs or enter a URL</label>
+          <button id="site-chip" class="site-chip" type="button" hidden></button>
+          <label class="sr-only" id="query-label" for="query">Search open tabs or enter a URL</label>
           <input id="query" type="text" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="results" placeholder="Search or Enter URL..." autocomplete="off" spellcheck="false" autocapitalize="none" autofocus>
+          <button id="site-hint" class="site-hint" type="button" hidden><span id="site-hint-label"></span><kbd>Tab</kbd></button>
           <button class="clear-button" id="clear" type="button" aria-label="Clear search" hidden>×</button>
         </div>
         <div id="results" class="results" role="listbox" aria-label="Open tabs, history and actions" aria-busy="true"></div>
@@ -48,6 +51,15 @@
       </div>
       <p class="field-error" id="shortcut-error" role="alert" hidden></p>
       <p class="sr-only" id="shortcut-status" role="status" hidden></p>
+      <section class="site-settings" aria-labelledby="site-settings-title">
+        <h2 id="site-settings-title">Site search</h2>
+        <label class="discovery-setting"><input id="discovery-enabled" type="checkbox" disabled><span>Automatic site discovery</span></label>
+        <p class="settings-description">Discover searches as you browse. Searches stay on this device; private windows are excluded.</p>
+        <button id="discovery-grant" class="settings-action" type="button" hidden>Allow website access</button>
+        <button id="discovery-clear" class="settings-action" type="button" disabled>Clear learned searches</button>
+        <p id="discovery-status" class="sr-only" role="status" aria-live="polite">Loading site searches…</p>
+        <p id="discovery-error" class="field-error" role="alert" hidden></p>
+      </section>
       </div>
     </section>
   </body>

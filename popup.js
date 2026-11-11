@@ -4,6 +4,7 @@ import { createPopupController } from "./popup-tabs.js";
 import { getInputPresentation } from "./popup-input.js";
 import { createFaviconCache } from "./favicon-cache.js";
 import { captureShortcut, createShortcutSettings, formatShortcut, getDefaultShortcut } from "./shortcut-settings.js";
+import { createDiscoveredSite, getFirefoxSearchSites, matchSiteSearch, resolveSiteSearch, SITE_SEARCH_PERMISSIONS } from "./site-search.js";
 
 const $ = (id) => document.getElementById(id);
 const input = $("query");
@@ -11,7 +12,14 @@ const list = $("results");
 const queryIcon = $("query-icon");
 const api = globalThis.browser;
 const preview = !api?.runtime?.id;
-const state = { tabs: [], history: [], self: null, rows: [], selected: -1, query: "", previewSelection: false, selectionLost: false, composing: false, busy: false, ready: false };
+const state = { tabs: [], history: [], self: null, rows: [], selected: -1, query: "", site: null, sitePrefix: "", previewSelection: false, selectionLost: false, composing: false, busy: false, ready: false };
+let searchSites = [];
+let installedSearchSites = [];
+let discoverySnapshot = { enabled: true, permitted: false, learned: [] };
+let siteCatalogVersion = 0;
+let siteSettingsBusy = false;
+let discoveryAvailable = false;
+const siteRemovers = [];
 let faviconCache = createFaviconCache(undefined, { persist: false });
 let controller;
 let historySearch;
@@ -80,6 +88,7 @@ function paintSiteIcon(container, kind, url, preferredIcon) {
 }
 
 function paintRowIcon(container, row) {
+  if (row.type === "site-search") { paintSiteIcon(container, "search"); return; }
   const website = row.type === "tab" || row.target?.type === "url";
   paintSiteIcon(container, website ? "url" : "search", row.type === "tab" ? row.tab.url : row.target?.url, row.tab?.favIconUrl);
 }
@@ -94,7 +103,7 @@ function updateFavicons() {
 function makeRow(row, index) {
   const el = document.createElement("div");
   el.id = `result-${index}`;
-  el.className = `result${row.type === "action" ? " action-result" : ""}`;
+  el.className = `result${["action", "site-search"].includes(row.type) ? " action-result" : ""}`;
   el.setAttribute("role", "option");
   el.setAttribute("aria-selected", String(index === state.selected));
   el.dataset.index = String(index);
@@ -123,6 +132,10 @@ function makeRow(row, index) {
     description.textContent = display.label;
     metaLabel.textContent = row.type === "history" ? "History" : row.tab.active ? "Current tab" : row.tab.discarded ? "Sleeping tab" : row.tab.pinned ? "Pinned tab" : "Switch to tab";
     if (row.type === "history") el.setAttribute("aria-label", `${display.title}, ${display.label}, from history`);
+  } else if (row.type === "site-search") {
+    el.dataset.action = "search";
+    title.textContent = state.query.trim() || `Open ${state.site.name}`;
+    el.setAttribute("aria-label", state.query.trim() ? `Search ${state.site.name} for ${state.query.trim()}` : `Open ${state.site.name}`);
   } else {
     const target = row.target;
     el.dataset.action = target.type;
@@ -143,7 +156,8 @@ function makeRow(row, index) {
 function updateInputPresentation() {
   if (state.composing) return;
   const row = state.rows[state.selected];
-  const presentation = getInputPresentation({ query: state.query, row, previewSelection: state.previewSelection });
+  const presentation = state.site ? { value: state.query, kind: "search", url: null }
+    : getInputPresentation({ query: state.query, row, previewSelection: state.previewSelection });
   if (input.value !== presentation.value) {
     input.value = presentation.value;
     input.setSelectionRange(input.value.length, input.value.length);
@@ -152,6 +166,45 @@ function updateInputPresentation() {
   $("clear").hidden = !input.value;
   const website = presentation.kind === "tab" || presentation.kind === "url";
   paintSiteIcon(queryIcon, website ? "url" : "search", website ? presentation.url : undefined, row?.tab?.favIconUrl);
+  const hint = state.site ? null : matchSiteSearch(searchSites, state.query);
+  $("site-hint").hidden = !hint;
+  $("site-hint-label").textContent = hint ? `Search ${hint.name}` : "";
+  $("site-hint").setAttribute("aria-label", hint ? `Search ${hint.name}, press Tab` : "Search a site");
+  $("site-chip").hidden = !state.site;
+  $("site-chip").textContent = state.site?.name ?? "";
+  $("site-chip").setAttribute("aria-label", state.site ? `Leave ${state.site.name} search` : "Leave site search");
+  $("query-label").textContent = state.site ? `Search ${state.site.name}` : "Search open tabs or enter a URL";
+  input.placeholder = state.site ? "Search…" : "Search or Enter URL...";
+}
+
+function enterSiteSearch() {
+  if (state.busy || state.site || state.composing) return;
+  const site = matchSiteSearch(searchSites, state.query);
+  if (!site) return;
+  state.sitePrefix = state.query;
+  state.site = site;
+  state.query = "";
+  state.previewSelection = false;
+  state.selectionLost = false;
+  input.value = "";
+  showError("");
+  requestHistory();
+  render();
+  input.focus();
+}
+
+function leaveSiteSearch(query = "") {
+  if (state.busy || !state.site) return;
+  state.site = null;
+  state.sitePrefix = "";
+  state.query = query;
+  state.previewSelection = false;
+  state.selectionLost = false;
+  input.value = query;
+  showError("");
+  requestHistory();
+  render();
+  input.focus();
 }
 
 function setSelection(index, scroll = false, previewSelection = state.previewSelection) {
@@ -176,13 +229,13 @@ function render(preserveSelection = false) {
   if (state.composing) return;
   const previousKey = preserveSelection ? state.rows[state.selected]?.key : undefined;
   const query = state.query.trim();
-  const allMatches = rankTabs(state.tabs, query, { excludeTabId: state.self?.id, windowId: state.self?.windowId, limit: Number.MAX_SAFE_INTEGER });
+  const allMatches = state.site ? [] : rankTabs(state.tabs, query, { excludeTabId: state.self?.id, windowId: state.self?.windowId, limit: Number.MAX_SAFE_INTEGER });
   const matches = allMatches;
   state.rows = matches.map((tab) => ({ type: "tab", tab, key: `tab-${tab.id}` }));
-  const historyMatches = rankHistory(state.history, query, { tabs: state.tabs });
+  const historyMatches = state.site ? [] : rankHistory(state.history, query, { tabs: state.tabs });
   state.rows.push(...historyMatches.map((item) => ({ type: "history", history: item, target: { type: "url", url: item.url }, key: `history-${item.url}` })));
-  const target = resolveInput(query);
-  if (target.type !== "empty") state.rows.push({ type: "action", target, key: "action" });
+  const target = state.site ? resolveSiteSearch(state.site, query) : resolveInput(query);
+  if (target.type !== "empty") state.rows.push({ type: state.site ? "site-search" : "action", target, key: "action" });
   const previousIndex = previousKey ? state.rows.findIndex((row) => row.key === previousKey) : -1;
   const selectionLost = state.previewSelection && previousKey && previousKey !== "action" && previousIndex < 0;
   if (selectionLost) state.selectionLost = true;
@@ -193,18 +246,20 @@ function render(preserveSelection = false) {
   list.setAttribute("aria-busy", String(state.busy || !state.ready));
   input.setAttribute("aria-expanded", String(state.rows.length > 0));
   $("empty-state").hidden = state.rows.length > 0;
-  $("empty-state").textContent = state.ready ? "No open tabs." : "Finding your open tabs…";
+  $("empty-state").textContent = state.site ? `Type to search ${state.site.name}.` : state.ready ? "No open tabs." : "Finding your open tabs…";
   setSelection(selection, false, previewSelection);
   if (selectionLost) showError(previousKey.startsWith("history-") ? "That history result is no longer available. Choose another result." : "That tab is no longer available. Choose another result.");
   const actionAnnouncement = target.type === "invalid" ? target.message : `${target.type === "url" ? "Open address" : "Web search"} also available.`;
-  announce(query ? `${allMatches.length} matching tabs. ${historyMatches.length} history results. ${actionAnnouncement}` : `${allMatches.length} open tabs in this window.`);
+  announce(state.site ? `Searching ${state.site.name}. ${query ? "Press Enter to search." : "Type your query."}`
+    : query ? `${allMatches.length} matching tabs. ${historyMatches.length} history results. ${actionAnnouncement}` : `${allMatches.length} open tabs in this window.`);
 }
 
 function requestHistory({ clear = true } = {}) {
   if (clear) state.history = [];
   if (!historySearch) return;
+  if (state.site) { void historySearch.search(""); return; }
   void historySearch.search(state.query).then((result) => {
-    if (!result || disposed || result.query !== state.query.trim()) return;
+    if (!result || disposed || state.site || result.query !== state.query.trim()) return;
     state.history = result.items;
     if (state.busy || state.composing) return;
     render(state.previewSelection || state.selectionLost);
@@ -237,7 +292,8 @@ async function closePopup() {
 
 async function choose(forceNavigation = false) {
   if (state.busy || !state.ready) return;
-  const row = forceNavigation ? { type: "action", target: resolveInput(input.value) } : state.rows[state.selected];
+  const row = state.site ? { type: "site-search", target: resolveSiteSearch(state.site, state.query.trim()) }
+    : forceNavigation ? { type: "action", target: resolveInput(input.value) } : state.rows[state.selected];
   if (!row || row.target?.type === "empty") return;
   showError("");
   if (row.target?.type === "invalid") {
@@ -256,7 +312,8 @@ async function choose(forceNavigation = false) {
     } else if (row.target.type === "url") {
       await controller.navigate(row.target.url);
     } else {
-      await controller.search(row.target.query);
+      if (row.target.engine) await controller.searchEngine(row.target.query, row.target.engine);
+      else await controller.search(row.target.query);
     }
     input.value = "";
     showError("");
@@ -283,7 +340,13 @@ input.addEventListener("compositionstart", () => { state.composing = true; });
 input.addEventListener("compositionend", () => { state.composing = false; acceptInput(); });
 input.addEventListener("keydown", (event) => {
   if (event.isComposing || event.keyCode === 229) return;
-  if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+  if (event.key === "Backspace" && state.site && input.value === "") {
+    event.preventDefault();
+    leaveSiteSearch(state.sitePrefix);
+  } else if (event.key === "Tab" && !event.shiftKey && !event.metaKey && !event.ctrlKey && !event.altKey && !state.site && matchSiteSearch(searchSites, state.query)) {
+    event.preventDefault();
+    enterSiteSearch();
+  } else if (event.key === "ArrowDown" || event.key === "ArrowUp") {
     event.preventDefault();
     const direction = event.key === "ArrowDown" ? 1 : -1;
     const next = state.selected < 0 ? direction > 0 ? 0 : state.rows.length - 1 : state.selected + direction;
@@ -297,7 +360,9 @@ input.addEventListener("keydown", (event) => {
       announce("Opening your destination. Please wait.");
       return;
     }
-    if (preview) {
+    if (state.site) {
+      leaveSiteSearch();
+    } else if (preview) {
       input.value = "";
       state.query = "";
       state.previewSelection = false;
@@ -316,6 +381,63 @@ list.addEventListener("click", (event) => {
   void choose();
 });
 $("clear").addEventListener("click", () => { input.value = ""; acceptInput(); input.focus(); });
+$("site-hint").addEventListener("click", enterSiteSearch);
+$("site-chip").addEventListener("click", () => leaveSiteSearch(state.sitePrefix));
+
+function showDiscoveryError(message = "") {
+  $("discovery-error").textContent = message;
+  $("discovery-error").hidden = !message;
+}
+
+function updateDiscoverySettings() {
+  $("discovery-enabled").checked = discoverySnapshot.enabled;
+  $("discovery-enabled").disabled = siteSettingsBusy || !discoveryAvailable || !preview && typeof api.permissions?.request !== "function";
+  $("discovery-clear").disabled = siteSettingsBusy || !discoveryAvailable || !discoverySnapshot.learned.length;
+  $("discovery-grant").hidden = !discoveryAvailable || !discoverySnapshot.enabled || discoverySnapshot.permitted;
+  $("discovery-grant").disabled = siteSettingsBusy || !preview && typeof api.permissions?.request !== "function";
+  const count = discoverySnapshot.learned.length;
+  $("discovery-status").textContent = siteSettingsBusy ? "Updating site searches…"
+    : !discoveryAvailable ? "Automatic discovery is unavailable. Firefox-installed searches still work."
+    : `${count} learned ${count === 1 ? "search" : "searches"}.${discoverySnapshot.enabled && !discoverySnapshot.permitted ? " Allow website access to discover searches." : ""}`;
+}
+
+async function discoveryOperation(operation) {
+  if (siteSettingsBusy) return;
+  siteSettingsBusy = true;
+  siteCatalogVersion += 1;
+  showDiscoveryError();
+  updateDiscoverySettings();
+  try {
+    const snapshot = await operation();
+    if (disposed) return;
+    siteCatalogVersion += 1;
+    applyDiscoverySnapshot(snapshot);
+  } catch (error) {
+    if (disposed) return;
+    await loadSearchSites(false);
+    showDiscoveryError(error.message || "Firefox could not update site searches. Try again.");
+  } finally {
+    if (!disposed) { siteSettingsBusy = false; updateDiscoverySettings(); }
+  }
+}
+
+function setDiscoveryEnabled(enabled) {
+  return discoveryOperation(async () => {
+    // Invoke the permission prompt directly in this user gesture, before messaging.
+    if (enabled && !preview && !await api.permissions.request(SITE_SEARCH_PERMISSIONS)) {
+      throw new Error("Website access was not granted. No new sites will be learned.");
+    }
+    return preview ? { ...discoverySnapshot, enabled, permitted: enabled || discoverySnapshot.permitted }
+      : api.runtime.sendMessage({ type: "site-search:set-enabled", enabled });
+  });
+}
+$("discovery-enabled").addEventListener("change", (event) => {
+  void setDiscoveryEnabled(event.currentTarget.checked);
+});
+$("discovery-grant").addEventListener("click", () => { void setDiscoveryEnabled(true); });
+$("discovery-clear").addEventListener("click", () => {
+  void discoveryOperation(() => preview ? { ...discoverySnapshot, learned: [] } : api.runtime.sendMessage({ type: "site-search:clear" }));
+});
 function showShortcutError(message = "") {
   $("shortcut-error").textContent = message;
   $("shortcut-error").hidden = !message;
@@ -388,6 +510,7 @@ $("settings-open").addEventListener("click", () => {
   $("settings").hidden = false;
   $("settings-close").focus();
   void shortcutOperation(() => shortcuts.read());
+  void loadSearchSites(false);
 });
 function closePreferences() {
   shortcutVersion += 1;
@@ -459,6 +582,12 @@ async function initialize() {
     }
   });
   render();
+  if (!preview && api.runtime.onMessage?.addListener) {
+    const changed = (message) => { if (message?.type === "site-search:changed") void loadSearchSites(false); };
+    api.runtime.onMessage.addListener(changed);
+    siteRemovers.push(() => api.runtime.onMessage.removeListener(changed));
+  }
+  void loadSearchSites();
   if (preview) {
     const { previewTabs, previewHistory, previewSelf } = await import("./preview.js");
     historySearch = createHistorySearch({ async search() { return previewHistory; } });
@@ -504,6 +633,34 @@ async function initialize() {
   }
 }
 
+function applyDiscoverySnapshot(snapshot) {
+  discoveryAvailable = typeof snapshot?.enabled === "boolean" && typeof snapshot?.permitted === "boolean" && Array.isArray(snapshot?.learned);
+  if (discoveryAvailable) discoverySnapshot = {
+    enabled: snapshot?.enabled === true,
+    permitted: snapshot?.permitted === true,
+    learned: (Array.isArray(snapshot?.learned) ? snapshot.learned : []).map((site) => createDiscoveredSite(site)).filter(Boolean),
+  };
+  refreshSiteSearchPresentation();
+}
+
+function refreshSiteSearchPresentation() {
+  searchSites = [...installedSearchSites, ...discoverySnapshot.learned];
+  updateInputPresentation();
+  updateDiscoverySettings();
+}
+
+async function loadSearchSites(refreshEngines = true) {
+  const version = ++siteCatalogVersion;
+  const [engines, snapshot] = await Promise.all([
+    refreshEngines ? preview ? [{ name: "YouTube" }, { name: "Google" }] : Promise.resolve().then(() => api.search?.get?.()).catch(() => []) : null,
+    preview ? discoverySnapshot : Promise.resolve().then(() => api.runtime.sendMessage({ type: "site-search:list" })).catch(() => null),
+  ]);
+  if (disposed) return;
+  if (refreshEngines) installedSearchSites = getFirefoxSearchSites(engines);
+  if (version === siteCatalogVersion) applyDiscoverySnapshot(snapshot);
+  else refreshSiteSearchPresentation();
+}
+
 window.addEventListener("pagehide", (event) => {
   if (event.persisted) return;
   disposed = true;
@@ -512,13 +669,15 @@ window.addEventListener("pagehide", (event) => {
   controller?.dispose();
   historySearch?.dispose();
   for (const remove of historyRemovers) remove();
+  for (const remove of siteRemovers) remove();
 });
 window.addEventListener("pageshow", (event) => { if (event.persisted && controller) void refresh(); });
 document.addEventListener("keydown", (event) => {
   if (event.key === "Escape" && !event.defaultPrevented && $("settings").hidden && !preview) {
     event.preventDefault();
     if (state.busy) { announce("Opening your destination. Please wait."); return; }
-    void closePopup();
+    if (state.site) leaveSiteSearch();
+    else void closePopup();
   }
 });
 void initialize();

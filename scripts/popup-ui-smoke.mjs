@@ -17,10 +17,19 @@ const firefoxExecutable=process.env.FIREFOX_BIN || (process.platform==='darwin'
   ? '/Applications/Firefox.app/Contents/MacOS/firefox'
   : '/usr/bin/firefox');
 if(!existsSync(firefoxExecutable)) throw new Error(`Firefox was not found at ${firefoxExecutable}. Set FIREFOX_BIN to your Firefox executable.`);
-const servedFiles=new Set(['popup.html','popup.js','popup.css','popup-input.js','history-search.js','favicon-cache.js','shortcut-settings.js','popup-tabs.js','core.js','preview.js','icons/icon.svg']);
+const servedFiles=new Set(['popup.html','popup.js','popup.css','popup-input.js','history-search.js','favicon-cache.js','shortcut-settings.js','popup-tabs.js','site-search.js','site-discovery-service.js','site-discovery.js','core.js','preview.js','icons/icon.svg']);
 const server=createServer(async(req,res)=>{
   const url=new URL(req.url,'http://localhost');
   if(url.pathname.startsWith('/fixture/')){
+    if(url.pathname==='/fixture/opensearch-page'){
+      res.writeHead(200,{'Content-Type':'text/html'}).end('<link rel="search" type="application/opensearchdescription+xml" href="/fixture/opensearch.xml"><h1>Catalog fixture</h1>');return;
+    }
+    if(url.pathname==='/fixture/opensearch.xml'){
+      res.writeHead(200,{'Content-Type':'application/opensearchdescription+xml'}).end('<OpenSearchDescription xmlns="http://a9.com/-/spec/opensearch/1.1/"><ShortName>Fixture Search</ShortName><Url type="text/html" template="'+origin+'/results?q={searchTerms}"/></OpenSearchDescription>');return;
+    }
+    if(url.pathname==='/fixture/discovery'){
+      res.writeHead(200,{'Content-Type':'text/html'}).end('<form role="search" action="/search"><input type="search" name="q" value="DO_NOT_SAVE"><input type="hidden" name="title" value="Special:Search"></form>');return;
+    }
     const title=url.pathname.includes('atlas')?'Atlas Design':url.pathname.includes('notes')?'Atlas Notes':'Fixture';
     res.writeHead(200,{'Content-Type':'text/html'}).end(`<title>${title}</title><h1>${title}</h1>`);return;
   }
@@ -40,7 +49,7 @@ let passed=0;
 function pass(name){passed++;console.log('PASS',name);}
 function mutations(calls){return calls.filter(call=>['create','update','remove','search'].includes(call[0]));}
 
-async function openCase({contextUrl,shortcut,failShortcutUpdate=false,favicon,cachedIcons=[],historyItems=[],deferHistory=false,failHistory=false}={}){
+async function openCase({contextUrl,shortcut,failShortcutUpdate=false,favicon,cachedIcons=[],historyItems=[],deferHistory=false,failHistory=false,engines=[],learned=[],discoveryEnabled=false,discoveryGranted=discoveryEnabled,denyDiscovery=false,failEngines=false,failDiscovery=false}={}){
   const page=await browser.newPage();
   page.setDefaultTimeout(5000);
   page.on('pageerror',error=>errors.push(error.message));
@@ -62,6 +71,8 @@ async function openCase({contextUrl,shortcut,failShortcutUpdate=false,favicon,ca
       const listeners=new Set();events[name]=listeners;
       return {addListener:listener=>listeners.add(listener),removeListener:listener=>listeners.delete(listener)};
     };
+    let discoveryGranted=options.discoveryGranted;
+    const siteState={enabled:options.discoveryEnabled,permitted:discoveryGranted,learned:copy(options.learned)};
     const storage=(initial={},scope='session')=>{
       const data=copy(initial);
       return {async get(key){return typeof key==='string'?{[key]:copy(data[key]??null)}:copy(data);},async set(values){Object.assign(data,copy(values));},async remove(key){calls.push(['storage-remove',scope,copy(key)]);for(const name of Array.isArray(key)?key:[key])delete data[name];},snapshot(){return copy(data);}};
@@ -70,7 +81,18 @@ async function openCase({contextUrl,shortcut,failShortcutUpdate=false,favicon,ca
     const defaultShortcut=isMac?'Command+Shift+K':/^Win/.test(navigator.platform)?'Ctrl+Shift+K':'Ctrl+Shift+Space';
     let currentShortcut=shortcut??defaultShortcut;
     const api={
-      runtime:{id:'input-commit-smoke@test'},
+      runtime:{
+        id:'input-commit-smoke@test',onMessage:event('runtimeMessage'),
+        async sendMessage(message){
+          calls.push(['site-search-message',copy(message)]);
+          if(options.failDiscovery)throw new Error('Fixture discovery unavailable');
+          if(message.type==='site-search:set-enabled')siteState.enabled=message.enabled&&discoveryGranted;
+          if(message.type==='site-search:clear')siteState.learned=[];
+          siteState.permitted=discoveryGranted;
+          return copy(siteState);
+        },
+      },
+      permissions:{async request(details){calls.push(['permissions-request',copy(details)]);discoveryGranted=!options.denyDiscovery;return discoveryGranted;}},
       tabs:{
         async query(query){calls.push(['query',copy(query)]);return [...records.values()].filter(tab=>tab.windowId===(query.currentWindow?1:query.windowId)&&(!query.active||tab.active)).map(copy);},
         async get(id){calls.push(['get',id]);if(!records.has(id))throw new Error('Tab closed');return copy(records.get(id));},
@@ -79,7 +101,7 @@ async function openCase({contextUrl,shortcut,failShortcutUpdate=false,favicon,ca
         async remove(id){calls.push(['remove',id]);records.delete(id);},
         onCreated:event('created'),onUpdated:event('updated'),onRemoved:event('removed'),onActivated:event('activated'),onMoved:event('moved'),onAttached:event('attached'),onDetached:event('detached'),onReplaced:event('replaced'),
       },
-      search:{async get(){calls.push(['search-get']);throw new Error('The popup must not enumerate Firefox search engines');},async search(properties){calls.push(['search',copy(properties)]);records.get(properties.tabId).url=origin+'/fixture/search?q='+encodeURIComponent(properties.query);}},
+      search:{async get(){calls.push(['search-get']);if(options.failEngines)throw new Error('Fixture engine failure');return copy(options.engines);},async search(properties){calls.push(['search',copy(properties)]);records.get(properties.tabId).url=origin+'/fixture/search?q='+encodeURIComponent(properties.query);}},
       storage:{local:storage({searchEngine:'Legacy engine',...(options.cachedIcons.length?{faviconCacheV1:options.cachedIcons}:{})},'local'),session:storage()},
       windows:{async update(){throw new Error('Native popup should not focus another window');}},
       commands:{
@@ -112,12 +134,12 @@ async function openCase({contextUrl,shortcut,failShortcutUpdate=false,favicon,ca
       removeHistory(url){this.historyItems=this.historyItems.filter(item=>item.url!==url);for(const listener of events.historyRemoved)listener({allHistory:false,urls:[url]});},
       updateTab(id,changes){Object.assign(records.get(id),changes);for(const listener of events.updated)listener(id,copy(changes),copy(records.get(id)));},
       removeTab(id){const tab=records.get(id);records.delete(id);for(const listener of events.removed)listener(id,{windowId:tab.windowId});},
+      learnSite(site){siteState.learned.push(copy(site));for(const listener of events.runtimeMessage)listener({type:'site-search:changed'});},
     };
-  },origin,{contextUrl,shortcut,failShortcutUpdate,favicon,cachedIcons,historyItems,deferHistory,failHistory});
+  },origin,{contextUrl,shortcut,failShortcutUpdate,favicon,cachedIcons,historyItems,deferHistory,failHistory,engines,learned,discoveryEnabled,discoveryGranted,denyDiscovery,failEngines,failDiscovery});
   await page.goto(origin,{waitUntil:'load',timeout:5000});
   await page.waitForFunction(()=>document.querySelector('#results').getAttribute('aria-busy')==='false');
   assert.equal(await page.$eval('#error',element=>element.textContent),'');
-  assert.equal(await page.evaluate(()=>window.__popupFake.calls.some(call=>call[0]==='search-get')),false);
   await page.focus('#query');
   return page;
 }
@@ -153,6 +175,203 @@ async function shortcutPlatform(page){
 try{
   browser=await puppeteer.launch({browser:'firefox',executablePath:firefoxExecutable,headless:true,timeout:15000,protocolTimeout:10000,defaultViewport:{width:1000,height:800}});
   console.log('BROWSER',await browser.version());
+  {
+    const page=await browser.newPage();await page.goto(origin+'/fixture/discovery',{waitUntil:'load'});
+    const source=await readFile(join(root,'site-discovery.js'),'utf8');
+    const extracted=await page.evaluate(source=>{
+      window.browser={extension:{inIncognitoContext:false}};
+      return (0,eval)(source);
+    },source);
+    assert.deepEqual(extracted,{openSearch:[],forms:[{template:origin+'/search?q={searchTerms}&title=Special%3ASearch'}]});
+    assert.equal(JSON.stringify(extracted).includes('DO_NOT_SAVE'),false);
+    pass('a semantic GET form yields only its reusable search template, never the entered query');await page.close();
+  }
+  {
+    const page=await browser.newPage();await page.goto(origin+'/fixture/discovery',{waitUntil:'load'});
+    const source=await readFile(join(root,'site-discovery.js'),'utf8');
+    for(const submit of ['<button formmethod="post">Search</button>','<input type="submit" formaction="/other">','<input type="image" formmethod="post">','<button name="scope" value="products">Products</button><button name="scope" value="documents">Documents</button>']){
+      await page.setContent('<form role="search" action="/search"><input type="search" name="q">'+submit+'</form>');
+      const extracted=await page.evaluate(source=>{window.browser={extension:{inIncognitoContext:false}};return (0,eval)(source);},source);
+      assert.deepEqual(extracted.forms,[]);
+    }
+    pass('ambiguous submit controls cannot alter the learned search method, destination or parameters');await page.close();
+  }
+  {
+    const page=await browser.newPage();await page.goto(origin+'/fixture/discovery',{waitUntil:'load'});
+    const source=await readFile(join(root,'site-discovery.js'),'utf8');
+    for(const name of ['api_token','account_number']){
+      await page.setContent('<link rel="search" type="application/opensearchdescription+xml" href="/opensearch.xml?'+name+'=private"><form role="search" action="/search?'+name+'=private"><input type="search" name="q"></form>');
+      const extracted=await page.evaluate(source=>{window.browser={extension:{inIncognitoContext:false}};return (0,eval)(source);},source);
+      assert.deepEqual(extracted,{openSearch:[],forms:[]});
+    }
+    pass('DOM discovery and descriptor validation both exclude compound credential and account parameters');await page.close();
+  }
+  {
+    const page=await browser.newPage();await page.goto(origin+'/fixture/opensearch-page?private=DO_NOT_SAVE',{waitUntil:'load'});
+    const source=await readFile(join(root,'site-discovery.js'),'utf8');
+    const result=await page.evaluate(async(source)=>{
+      const {createSiteSearchService}=await import('/site-discovery-service.js');
+      const {resolveSiteSearch}=await import('/site-search.js');
+      const stored={};const tab={id:1,status:'complete',incognito:false,url:location.href};
+      const api={permissions:{async contains(){return true;}},runtime:{async sendMessage(){}},storage:{local:{async get(key){return {[key]:structuredClone(stored[key])};},async set(values){Object.assign(stored,structuredClone(values));}}},tabs:{async query(){return [tab];},async get(){return {...tab};}},scripting:{async executeScript(){return [{frameId:0,result:(0,eval)(source)}];}}};
+      const first=createSiteSearchService(api);await first.start();await first.setEnabled(true);first.dispose();
+      const reloaded=createSiteSearchService(api);const snapshot=await reloaded.read();
+      const site=snapshot.learned[0];const target=resolveSiteSearch(site,'space & stars');reloaded.dispose();
+      return {name:site.name,origin:site.origin,count:snapshot.learned.length,target,privateDataSaved:JSON.stringify(snapshot).includes('DO_NOT_SAVE')};
+    },source);
+    assert.deepEqual(result,{name:'Fixture Search',origin,count:1,target:{type:'url',url:origin+'/results?q=space%20%26%20stars'},privateDataSaved:false});
+    pass('the real catalog discovers, fetches, saves, reloads and resolves OpenSearch without retaining the visited query');await page.close();
+  }
+  {
+    const page=await browser.newPage();
+    await page.goto(origin,{waitUntil:'load'});
+    const result=await page.evaluate(async()=>{
+      const {parseOpenSearch,resolveSiteSearch}=await import('./site-search.js');
+      const xml='<OpenSearchDescription xmlns="http://a9.com/-/spec/opensearch/1.1/"><ShortName>YouTube</ShortName><Url type="application/x-suggestions+json" template="https://www.youtube.com/suggest?q={searchTerms}"/><Url type="text/html" template="https://www.youtube.com/results?search_query={searchTerms}&amp;page={startPage?}&amp;utm_source=opensearch"/></OpenSearchDescription>';
+      const site=parseOpenSearch(xml,'https://www.youtube.com/opensearch','https://www.youtube.com/');
+      return {name:site.name,keyword:site.keyword,target:resolveSiteSearch(site,'jazz & piano')};
+    });
+    assert.deepEqual(result,{name:'YouTube',keyword:'youtube.com',target:{type:'url',url:'https://www.youtube.com/results?search_query=jazz%20%26%20piano&utm_source=opensearch'}});
+    pass('OpenSearch yields an HTML search with encoded terms and no unresolved optional page token');
+    await page.close();
+  }
+  {
+    const page=await browser.newPage();await page.goto(origin,{waitUntil:'load'});
+    const accepted=await page.evaluate(async()=>{
+      const {parseOpenSearch}=await import('./site-search.js');
+      const wrap=body=>'<OpenSearchDescription xmlns="http://a9.com/-/spec/opensearch/1.1/"><ShortName>Example</ShortName>'+body+'</OpenSearchDescription>';
+      return [
+        wrap('<Url type="text/html" method="post" template="https://example.com/search?q={searchTerms}"/>'),
+        wrap('<InputEncoding>ISO-8859-1</InputEncoding><Url type="text/html" template="https://example.com/search?q={searchTerms}"/>'),
+        '<OpenSearchDescription><ShortName>Example</ShortName><Url type="text/html" template="https://example.com/search?q={searchTerms}"/></OpenSearchDescription>',
+        '<broken',
+        '<Foreign xmlns="http://a9.com/-/spec/opensearch/1.1/"><ShortName>Example</ShortName><Url type="text/html" template="https://example.com/?q={searchTerms}"/></Foreign>',
+        '<OpenSearchDescription xmlns="http://a9.com/-/spec/opensearch/1.1/"><Wrapper><ShortName>Example</ShortName><Url type="text/html" template="https://example.com/?q={searchTerms}"/></Wrapper></OpenSearchDescription>',
+        '<OpenSearchDescription xmlns="http://a9.com/-/spec/opensearch/1.1/"><ShortName><b>Example</b></ShortName><Url type="text/html" template="https://example.com/?q={searchTerms}"/></OpenSearchDescription>',
+      ].map(xml=>parseOpenSearch(xml,'https://example.com/opensearch.xml','https://example.com/')!==null);
+    });
+    assert.deepEqual(accepted,[false,false,false,false,false,false,false]);
+    pass('unsupported POST, legacy encodings and malformed OpenSearch metadata are rejected');await page.close();
+  }
+  {
+    const page=await browser.newPage();await page.goto(origin,{waitUntil:'load'});
+    const result=await page.evaluate(async()=>{
+      const {parseOpenSearch,resolveSiteSearch}=await import('./site-search.js');
+      const xml='<os:OpenSearchDescription xmlns:os="http://a9.com/-/spec/opensearch/1.1/"><os:ShortName>Example</os:ShortName><os:Url type="text/html" template="../search/{searchTerms}?lang=en"/></os:OpenSearchDescription>';
+      const site=parseOpenSearch(xml,'https://example.com/meta/opensearch.xml','https://www.example.com/visited?private=DO_NOT_SAVE');
+      return site&&{origin:site.origin,keyword:site.keyword,target:resolveSiteSearch(site,'red panda')};
+    });
+    assert.deepEqual(result,{origin:'https://www.example.com',keyword:'example.com',target:{type:'url',url:'https://example.com/search/red%20panda?lang=en'}});
+    pass('relative OpenSearch templates resolve against metadata while saving only the source origin');await page.close();
+  }
+  {
+    const page=await openCase({engines:[{name:'YouTube',alias:'!yt'}]});
+    await page.type('#query','you');
+    await page.waitForFunction(()=>!document.querySelector('#site-hint')?.hidden&&document.querySelector('#site-hint')?.textContent.includes('YouTube'));
+    assert.deepEqual(mutations(await page.evaluate(()=>window.__popupFake.calls)),[]);
+    await page.keyboard.press('Tab');
+    assert.equal(await page.$eval('#site-chip',element=>element.hidden),false);
+    assert.equal(await page.$eval('#query',element=>element.value),'');
+    await page.type('#query','jazz');
+    assert.deepEqual(await page.$$eval('[role=option]',rows=>rows.map(row=>row.dataset.type)),['site-search']);
+    await page.keyboard.press('Enter');await waitClosed(page);
+    assert.deepEqual(mutations(await page.evaluate(()=>window.__popupFake.calls)),[
+      ['create',{url:'about:blank',active:false,windowId:1}],
+      ['search',{query:'jazz',engine:'YouTube',tabId:100}],
+      ['update',100,{active:true}],
+    ]);
+    pass('an early site prefix enters dedicated engine search with Tab and commits only on Enter');
+    await page.close();
+  }
+  {
+    const page=await openCase({engines:[{name:'YouTube'}]});
+    await page.type('#query','you');await page.waitForFunction(()=>!document.querySelector('#site-hint').hidden);
+    await page.keyboard.press('Tab');await page.keyboard.press('Backspace');
+    assert.equal(await page.$eval('#site-chip',element=>element.hidden),true);
+    assert.equal(await page.$eval('#query',element=>element.value),'you');
+    await page.keyboard.press('Tab');await page.type('#query','jazz');await page.keyboard.press('Escape');
+    assert.equal(await page.$eval('#site-chip',element=>element.hidden),true);
+    assert.equal(await page.$eval('#query',element=>element.value),'');
+    assert.equal(await page.evaluate(()=>window.__popupFake.calls.some(call=>call[0]==='close')),false);
+    await page.keyboard.press('Escape');await waitClosed(page);
+    assert.deepEqual(mutations(await page.evaluate(()=>window.__popupFake.calls)),[]);
+    pass('empty Backspace restores the site prefix and Escape exits and clears before a second Escape closes');await page.close();
+  }
+  {
+    const page=await openCase({contextUrl:'about:newtab',learned:[{id:'learned:https://www.youtube.com',name:'YouTube',keyword:'youtube.com',origin:'https://www.youtube.com',template:'https://www.youtube.com/results?search_query={searchTerms}'}]});
+    await page.evaluate(()=>window.__popupFake.updateTab(20,{title:'YouTube open tab'}));
+    await page.type('#query','you');await page.waitForFunction(()=>!document.querySelector('#site-hint').hidden);
+    await page.keyboard.press('ArrowDown');
+    assert.equal(await page.$eval('#site-hint',element=>element.textContent.includes('YouTube')),true);
+    await page.keyboard.press('Tab');await page.type('#query','cats & dogs');
+    await page.keyboard.down('Control');await page.keyboard.press('Enter');await page.keyboard.up('Control');await waitClosed(page);
+    assert.deepEqual(mutations(await page.evaluate(()=>window.__popupFake.calls)),[['update',10,{url:'https://www.youtube.com/results?search_query=cats%20%26%20dogs'}]]);
+    pass('a learned-site hint survives normal result selection and forced Enter searches the site in the eligible Home tab');await page.close();
+  }
+  {
+    const page=await openCase({engines:[{name:'Google'}],learned:[{name:'YouTube',origin:'https://www.youtube.com',template:'https://www.youtube.com/results?search_query={searchTerms}'}]});
+    await openPreferences(page);await page.waitForSelector('#discovery-enabled');
+    await page.waitForFunction(()=>!document.querySelector('#discovery-enabled').disabled);
+    assert.equal(await page.$eval('#discovery-enabled',element=>element.checked),false);
+    await page.click('#discovery-enabled');await page.waitForFunction(()=>document.querySelector('#discovery-enabled').checked&&!document.querySelector('#discovery-enabled').disabled);
+    await page.click('#discovery-enabled');await page.waitForFunction(()=>!document.querySelector('#discovery-enabled').checked&&!document.querySelector('#discovery-enabled').disabled);
+    await page.click('#settings-close');await page.type('#query','you');
+    await page.waitForFunction(()=>!document.querySelector('#site-hint').hidden);
+    await openPreferences(page);await page.click('#discovery-enabled');
+    await page.waitForFunction(()=>document.querySelector('#discovery-enabled').checked&&!document.querySelector('#discovery-enabled').disabled);
+    await page.click('#discovery-clear');await page.waitForFunction(()=>document.querySelector('#discovery-clear').disabled);
+    assert.equal(await page.$eval('#discovery-enabled',element=>element.checked),true);
+    await page.click('#settings-close');assert.equal(await page.$eval('#site-hint',element=>element.hidden),true);
+    await page.click('#clear');await page.type('#query','goo');await page.waitForFunction(()=>!document.querySelector('#site-hint').hidden);
+    assert.equal(await page.$eval('#site-hint',element=>element.textContent.includes('Google')),true);
+    const calls=await page.evaluate(()=>window.__popupFake.calls);
+    assert.deepEqual(calls.filter(call=>call[0]==='permissions-request').map(call=>call[1]),[{origins:['http://*/*','https://*/*']},{origins:['http://*/*','https://*/*']}]);
+    assert.deepEqual(mutations(calls),[]);
+    pass('Preferences opts in to discovery, retains sites when paused, and clears only learned searches without changing the toggle');await page.close();
+  }
+  {
+    const page=await openCase({engines:[{name:'YouTube'}],failDiscovery:true});
+    await page.type('#query','you');await page.waitForFunction(()=>!document.querySelector('#site-hint').hidden);
+    await page.keyboard.press('Tab');await page.type('#query','jazz');await page.keyboard.press('Enter');await waitClosed(page);
+    assert.equal(mutations(await page.evaluate(()=>window.__popupFake.calls)).find(call=>call[0]==='search')[1].engine,'YouTube');
+    pass('installed-engine site search remains usable when the discovery background is unavailable');await page.close();
+  }
+  {
+    const page=await openCase({discoveryEnabled:true,discoveryGranted:false});
+    await openPreferences(page);await page.waitForFunction(()=>!document.querySelector('#discovery-enabled').disabled);
+    assert.equal(await page.$eval('#discovery-enabled',element=>element.checked),true);
+    assert.equal(await page.$eval('#discovery-grant',element=>element.hidden),false);
+    await page.click('#discovery-grant');await page.waitForFunction(()=>document.querySelector('#discovery-grant').hidden&&!document.querySelector('#discovery-enabled').disabled);
+    assert.equal(await page.$eval('#discovery-enabled',element=>element.checked),true);
+    assert.equal(await page.$eval('#discovery-status',element=>element.classList.contains('sr-only')),true);
+    assert.equal(await page.$eval('#discovery-status',element=>element.textContent.includes('Discovery is on')),false);
+    pass('default-on discovery clearly requests the optional website access before learning');await page.close();
+  }
+  {
+    const page=await openCase({discoveryEnabled:true,discoveryGranted:false,denyDiscovery:true,engines:[{name:'Google'}]});
+    await openPreferences(page);await page.waitForFunction(()=>!document.querySelector('#discovery-enabled').disabled);
+    await page.click('#discovery-grant');await page.waitForFunction(()=>!document.querySelector('#discovery-error').hidden&&!document.querySelector('#discovery-enabled').disabled);
+    assert.match(await page.$eval('#discovery-error',element=>element.textContent),/not granted/);
+    assert.equal(await page.$eval('#discovery-enabled',element=>element.checked),true);
+    assert.equal(await page.$eval('#discovery-grant',element=>element.hidden),false);
+    assert.equal(await page.evaluate(()=>window.__popupFake.calls.some(call=>call[0]==='site-search-message'&&call[1].type==='site-search:set-enabled')),false);
+    await page.click('#settings-close');await page.type('#query','goo');await page.waitForFunction(()=>!document.querySelector('#site-hint').hidden);
+    assert.equal(await page.$eval('#error',element=>element.hidden),true);
+    pass('declining website access preserves the default preference and leaves installed engines usable');await page.close();
+  }
+  {
+    const page=await openCase();await page.type('#query','you');
+    assert.equal(await page.$eval('#site-hint',element=>element.hidden),true);
+    await page.evaluate(()=>window.__popupFake.learnSite({name:'YouTube',origin:'https://www.youtube.com',template:'https://www.youtube.com/results?search_query={searchTerms}'}));
+    await page.waitForFunction(()=>!document.querySelector('#site-hint').hidden);
+    assert.equal(await page.$eval('#query',element=>element.value),'you');
+    await page.setViewport({width:300,height:600});
+    assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
+    await page.keyboard.press('Tab');await page.type('#query','jazz');
+    assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
+    assert.deepEqual(mutations(await page.evaluate(()=>window.__popupFake.calls)),[]);
+    pass('new discoveries appear while typing without changing the draft or overflowing a narrow popup');await page.close();
+  }
   {
     const page=await openCase({historyItems:[
       {title:'Atlas Design',url:origin+'/fixture/atlas?view=design#duplicate',lastVisitTime:100},
@@ -397,7 +616,7 @@ try{
     assert.deepEqual(await page.evaluate(()=>window.__popupFake.localData()),{});
     const calls=await page.evaluate(()=>window.__popupFake.calls);
     assert(calls.some(call=>call[0]==='commands-getAll'));
-    assert.deepEqual(calls.filter(call=>call[0]==='commands-update'||call[0]==='commands-reset'||call[0]==='search-get'),[]);
+    assert.deepEqual(calls.filter(call=>call[0]==='commands-update'||call[0]==='commands-reset'),[]);
     assert.deepEqual(calls.filter(call=>call[0]==='storage-remove'),[['storage-remove','local','searchEngine']]);
     await page.click('#settings-close');
     assert.equal(await page.$eval('#settings',element=>element.hidden),true);

@@ -162,6 +162,26 @@ test("a legacy engine argument cannot override Firefox's default search engine",
   assert.deepEqual(calls.find((call) => call[0] === "search"), ["search", { query: "tea", tabId: 40 }]);
 });
 
+test("an explicit engine search creates one owned tab and uses the selected Firefox engine", async () => {
+  const { controller, calls, records } = await initialized();
+  const result = await controller.searchEngine("  tea  ", "DuckDuckGo");
+  assert.equal(result.id, 40);
+  assert.deepEqual(mutations(calls), [
+    ["create", { url: "about:blank", active: false, windowId: 1 }],
+    ["search", { query: "tea", engine: "DuckDuckGo", tabId: 40 }],
+    ["update", 40, { active: true }],
+  ]);
+  assert.equal(records.get(10).url, "https://current.example/");
+});
+
+test("an explicit engine search requires a nonempty engine name before any tab mutation", async () => {
+  const { controller, calls } = await initializedNewTab("about:home");
+  for (const engineName of [undefined, null, "", "  ", 42, {}]) {
+    await assert.rejects(controller.searchEngine("tea", engineName), /Choose a Firefox search engine/);
+  }
+  assert.deepEqual(mutations(calls), []);
+});
+
 test("empty queries and unavailable search API do not leave blank tabs", async () => {
   const { controller, api, calls } = await initialized();
   await assert.rejects(controller.search("  "), /Enter something/);
@@ -305,6 +325,15 @@ test("reused searches always use Firefox's default without creating, activating 
     assert.match(records.get(10).url, /search.example/);
     assert.equal(records.size, 3);
   }
+});
+
+test("an explicit engine search reuses the captured Home tab without other tab mutations", async () => {
+  const { controller, calls, records } = await initializedNewTab("about:home");
+  const result = await controller.searchEngine("  coffee  ", "DuckDuckGo");
+  assert.equal(result.id, 10);
+  assert.deepEqual(mutations(calls), [["search", { query: "coffee", engine: "DuckDuckGo", tabId: 10 }]]);
+  assert.match(records.get(10).url, /search.example/);
+  assert.equal(records.size, 3);
 });
 
 test("about:blank and decorated or privileged browser pages are never reused", async () => {
