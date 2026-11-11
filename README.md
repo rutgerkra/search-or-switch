@@ -91,6 +91,7 @@ Optional isolated Firefox UI checks use `puppeteer-core`:
 ```sh
 npm install --no-save --package-lock=false puppeteer-core@25.17.0
 npm run test:ui
+npm run screenshots  # Refresh main preview and store screenshot from the current UI
 npm run test:firefox  # Python 3 and desktop Firefox; disposable profile
 ```
 

@@ -15,7 +15,7 @@ assert.equal(manifest.commands._execute_action.suggested_key.mac, "Command+Shift
 assert.equal(manifest.commands._execute_action.suggested_key.default, "Ctrl+Shift+Space");
 assert.equal(manifest.commands._execute_action.suggested_key.windows, "Ctrl+Shift+K");
 for (const file of ["popup.html", "popup.css", "icons/icon.svg", "popup.js", "popup-input.js", "history-search.js", "favicon-cache.js", "shortcut-settings.js", "core.js", "popup-tabs.js", "site-search.js", "site-discovery-service.js", "site-discovery.js", "background.js", "preview.js"]) await access(file);
-for (const file of ["popup.js", "popup-input.js", "history-search.js", "favicon-cache.js", "shortcut-settings.js", "core.js", "popup-tabs.js", "site-search.js", "site-discovery-service.js", "site-discovery.js", "background.js", "preview.js", "scripts/serve.mjs", "scripts/build.mjs", "scripts/popup-ui-smoke.mjs"]) {
+for (const file of ["popup.js", "popup-input.js", "history-search.js", "favicon-cache.js", "shortcut-settings.js", "core.js", "popup-tabs.js", "site-search.js", "site-discovery-service.js", "site-discovery.js", "background.js", "preview.js", "scripts/serve.mjs", "scripts/build.mjs", "scripts/popup-ui-smoke.mjs", "scripts/screenshots.mjs"]) {
   execFileSync(process.execPath, ["--check", file], { stdio: "inherit" });
 }
 const html = await readFile("popup.html", "utf8");
