@@ -263,7 +263,7 @@ try:
     manifest = json.loads((EXTENSION / 'manifest.json').read_text())
     assert manifest.get('action', {}).get('default_popup') == 'popup.html'
     assert '_execute_action' in manifest.get('commands', {})
-    assert not manifest.get('background'), 'The toolbar popup does not need a background page.'
+    assert manifest.get('background') == {'scripts': ['background.js'], 'type': 'module'}, 'Discovery uses a Firefox module event page.'
     assert 'sidebar_action' not in manifest and 'chrome_url_overrides' not in manifest
     SHORTCUT = shortcut_keys(manifest)
 

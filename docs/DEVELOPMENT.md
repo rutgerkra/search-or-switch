@@ -2,17 +2,17 @@
 
 A keyboard-first Firefox toolbar popup: **one shortcut → type → Enter → close**. Find an open tab, reopen a page from history, or open an address or web search.
 
-Default shortcuts are **⇧⌘K** on macOS and **Ctrl+Shift+Space** on Windows/Linux; the toolbar button also opens the popup. The popup requests input focus as it opens. Opening and typing create no tabs. Committing an address or search reuses the current Firefox Home/New Tab page when it is still available; otherwise it creates one destination tab in the current window. Selecting an existing tab activates it and dismisses the popup.
+Default shortcuts are **⇧⌘K** on macOS, **Ctrl+Shift+K** on Windows, and **Ctrl+Shift+Space** on Linux; the toolbar button also opens the popup. The popup requests input focus as it opens. Opening and typing create no tabs. Committing an address or search reuses the current Firefox Home/New Tab page when it is still available; otherwise it creates one destination tab in the current window. Selecting an existing tab activates it and dismisses the popup.
 
-The interface uses Firefox-style controls, neutral colors, system fonts, and light/dark appearance. Firefox anchors the native popup to its toolbar. Escape or clicking elsewhere dismisses it.
+The interface uses Firefox-style controls, neutral colors, system fonts, and light/dark appearance. Firefox anchors the native popup to its toolbar. Clicking elsewhere or pressing Escape dismisses it. Empty Backspace or clicking the site chip exits site mode while keeping the popup open.
 
-Built with plain HTML, CSS, and JavaScript. No runtime dependencies, remote assets, background page, or build step are required to load the extension. Targets **Firefox Desktop 140+**. The shortcut, URL previews, search restoration, globe fallback, cached icons, and Enter-to-dismiss behavior were verified with desktop keyboard input in Firefox 160 on macOS.
+Built with plain HTML, CSS, and JavaScript. No runtime dependencies, remote UI assets, or build step are required to load the extension. A Firefox MV3 background event page handles optional site discovery. Targets **Firefox Desktop 140+**. The existing shortcut, URL previews, search restoration, globe fallback, cached icons, and Enter-to-dismiss behavior were verified with desktop keyboard input in Firefox 160 on macOS; site-search verification is tracked separately below.
 
 ## Try it in Firefox
 
 1. Open `about:debugging#/runtime/this-firefox`.
 2. Choose **Load Temporary Add-on…** and select this folder’s `manifest.json`.
-3. Press **⇧⌘K** / **Ctrl+Shift+Space**, or click **Search or Switch** in the toolbar. Pin its button from Firefox’s extensions menu if needed.
+3. Press **⇧⌘K** (macOS), **Ctrl+Shift+K** (Windows), or **Ctrl+Shift+Space** (Linux), or click **Search or Switch** in the toolbar. Pin its button from Firefox’s extensions menu if needed.
 4. Type, use the arrow keys to choose a result, and press Enter.
 
 Pinning the button gives the popup its wider layout. When the button is unpinned, Firefox displays it inside the narrower Extensions menu; the shortcut works in either placement.
@@ -29,10 +29,14 @@ Temporary installation lasts until Firefox restarts. After editing the files, cl
 | --- | --- |
 | Type | Filter open-tab titles, hostnames, and URLs locally. The field starts with “Search or Enter URL...”. |
 | ↑ / ↓ | Preview the selected tab/address URL in the field. The search action restores your typed query. Selection wraps. |
+| Tab on a site hint | Replace the prefix with a site chip and enter a dedicated site-search query. |
 | Enter | Commit the highlighted tab or action, then close. Does nothing in the initial empty field. |
-| ⌘Enter / Ctrl+Enter | Open the currently displayed address/search even when tabs match. Reuse the current Home/New Tab placeholder when available. |
-| Escape or click elsewhere | Dismiss the popup. |
-| Preferences | View, record, clear, or restore the popup shortcut in a native-style row. |
+| ⌘Enter / Ctrl+Enter | Open the currently displayed address/search even when tabs match. In site mode, search the selected site. Reuse the current Home/New Tab placeholder when available. |
+| Backspace with an empty site query | Exit site mode and restore the prefix used to enter it. |
+| Click the site chip | Exit site mode and restore the original prefix. |
+| Escape | Dismiss Firefox’s native popup. The first-Escape mode-exit handler runs only in hosts that deliver the key. |
+| Click elsewhere | Dismiss the popup. |
+| Preferences | Edit the shortcut, control automatic discovery, allow website access, or clear learned searches. |
 
 Recent tabs appear immediately, with no initial selection and a magnifier in the empty field. Typing selects the best match. Arrow-key URL previews preserve the original query used to filter the list; choosing the search action restores that query. Editing a previewed URL makes the edited text the new query. The input icon follows the highlighted action: a magnifier for search, a cached site icon when available, or a globe for an address.
 
@@ -44,11 +48,23 @@ Address and search commits reuse only the tab captured when the popup opened, an
 
 Bare domains become HTTPS addresses. Localhost and loopback addresses use HTTP. Ordinary phrases become searches. Executable or privileged schemes, malformed HTTP URLs, and embedded URL credentials are rejected.
 
-Searches always use Firefox’s current default search engine. The extension does not enumerate engines or store an engine override. The obsolete local `searchEngine` preference is removed on a best-effort basis when the popup loads.
+Ordinary searches use Firefox’s current default search engine. The extension enumerates installed engines for explicit site searches without changing that default. The obsolete local `searchEngine` preference is removed on a best-effort basis when the popup loads.
 
 As you type, matching open tabs appear first, followed by up to six history results and the address/search action. History matches URLs and titles across all dates, with a short debounce and at most 100 candidates per query. URLs already open in this window and duplicate fragment variants are omitted from history suggestions. Arrow keys preview the selected history URL; returning to the search action restores the original query. Enter opens the history destination, reusing an available Home/New Tab placeholder. An empty query shows open tabs only. History results use cached site icons or the globe fallback.
 
 History lookups run locally through Firefox’s read-only search API; the extension never adds, deletes, logs, or stores history records. Late replies cannot replace a newer query or a deliberate arrow-key selection. Removing history refreshes the list and invalidates a deleted selection. Browser API errors leave open tabs and web search usable. Loading this version requires Firefox’s `history` permission.
+
+## Site search
+
+The [site-search spec](SITE_SEARCH.md) defines this feature’s interaction and discovery contract. In ordinary mode, a matching site hint appears independently of the highlighted normal result. Firefox-installed engine names and aliases are available immediately. Learned sites match a domain prefix, such as `you` for YouTube. The shortest matching keyword wins, with stable keyword lexical order breaking ties. Arc experiments support shortest-first ranking; its exact internal tie rule is unverified.
+
+Pressing Tab on the hint enters a dedicated site chip and clears the query field. Tab and history results are hidden until site mode ends. Enter opens the selected site’s results page, and ⌘Enter / Ctrl+Enter keeps the selected site. Backspace on an empty site query or clicking the chip returns to the original prefix. The intended first-Escape exit-and-clear behavior is best-effort: Firefox’s native popup consumes Escape and closes before the extension receives it. Mozilla intentionally preserves this dismissal behavior ([decision](https://bugzilla.mozilla.org/show_bug.cgi?id=1443758#c5), [popup keyboard handling](https://searchfox.org/firefox-main/source/layout/xul/nsXULPopupManager.cpp#2401)). No site mode survives a popup reopening. Site commits use the same captured Home/New Tab reuse rules as other search commits and create no tabs before commit.
+
+Preferences has one **Automatic site discovery** toggle, on by default. Its checked state reflects the saved preference independently of page access. When it is on without HTTP(S) access, **Allow website access** appears; clicking that button requests the optional permission. Approving access scans existing non-private tabs and then learns from future visits. Declining keeps the prior preference state and starts no learning. Installed engines work without that access. Turning discovery on with access already granted also scans existing tabs. Supported definitions become usable immediately: standard OpenSearch GET `text/html` templates and unambiguous GET search forms. There is no POST or JavaScript inference, manual site editor, site-management list, or per-site approval step. Discovery does not read or save user-entered form values; only explicitly safe static markup defaults are retained.
+
+Turning discovery off or revoking its page access stops learning while retaining saved definitions. **Clear learned searches** removes only learned definitions; it leaves the discovery toggle, website-access grants, and Firefox-installed engines unchanged. If discovery stays enabled with page access, later visits can learn those sites again. Private tabs never contribute discoveries. The service stores local names, keywords, origins, and reusable templates, with no entered query history, full visited URLs, or sync storage.
+
+`background.js` is a Firefox MV3 module event page. `site-discovery-service.js` owns permission-aware discovery and metadata fetching; `site-discovery.js` extracts metadata from permitted pages through `scripting`; `site-search.js` owns the model and definition parsing. The extension CSP permits background HTTP(S) metadata fetches, while the popup has its own `connect-src 'none'` restriction. No remote suggestions or icons are requested.
 
 ## Development
 
@@ -67,11 +83,11 @@ The normal-browser preview embeds `popup.html` in a 560 × 480 frame, shrinking 
 
 The optional UI checks use desktop Firefox and `puppeteer-core` (tested with 25.17.0, which declares Node.js 22.12+). Install the test tool with `npm install --no-save --package-lock=false puppeteer-core@25.17.0`, or set `PUPPETEER_MODULE` to an existing module path. Set `FIREFOX_BIN` if needed. The checks run the actual popup in isolated headless Firefox with browser API fakes, local fixtures, and no remote requests. They cover tab actions and URL previews, Home/New Tab reuse, blank-document preservation, inline shortcut editing, and favicon rendering in the input and result rows. Favicon cases include Firefox’s base64 SVG format, URL-encoded SVG, cached destinations, and broken-image fallback.
 
-The optional native smoke script uses Python’s standard library and a separate, disposable Firefox profile. Set `FIREFOX_BIN` if Firefox is not on PATH or in its standard macOS location. It opens a visible isolated Firefox window by default; set `FFARC_HEADLESS=1` to try a headless environment. Local HTTP fixtures avoid external searches. If Marionette cannot enter the popup’s remote frame, it explicitly reports content checks as **SKIP**. A run with skips does not verify typing or selection. Unit tests use browser API fakes.
+The native checks use Python’s standard library and separate, disposable Firefox profiles. Set `FIREFOX_BIN` if Firefox is not on PATH or in its standard macOS location. The discovery check exercises real isolated content-script execution, OpenSearch fetching, persistence, and query-data exclusion. It caught Firefox’s non-iterable Xray-wrapped `URLSearchParams.keys()` result; the extractor uses `forEach` instead. The popup smoke opens a visible isolated window by default; set `FFARC_HEADLESS=1` for a headless run. Local HTTP fixtures avoid external searches. If Marionette cannot enter the popup’s remote frame, it explicitly reports content checks as **SKIP**. A run with skips does not verify typing or selection. Unit tests use browser API fakes.
 
 Desktop keyboard verification of the installed Firefox 160 extension passed **open shortcut → type → arrow preview → Enter** using local pages. Arrow keys updated the full displayed URL, returning to the search action restored the original query, and Enter activated the selected existing tab and closed the popup. A local PNG favicon supplied by Firefox appeared in the input without an image request from the popup; a non-supported icon fell back to the globe. The temporary test tab was closed afterward. No input click, focus command, or second shortcut was used. The full flow was checked with the previous ⌘⇧Y binding. The current ⇧⌘K default was then verified to open the popup and accept untargeted typing, with Escape dismissing it. Firefox’s original ⌘K Search binding was restored and separately verified. Earlier basic-flow checks also passed beside `about:debugging` and ordinary webpages.
 
-Firefox must finish opening the native popup before it can receive typing; input sent before its first render can be lost. Real search-engine submission and Firefox 140 still need native coverage. URL creation and search dispatch are covered with browser API fakes.
+Firefox must finish opening the native popup before it can receive typing; input sent before its first render can be lost. Physical-keyboard verification in Firefox 160 on macOS passed **shortcut → immediate `goo` typing → Tab → site chip**, without clicking the input. The default-on preference and real website-access prompt worked in an empty profile. After a fixture visit, `127` offered Native Fixture; Tab entered site mode, empty Backspace restored the prefix, and searching `stars & space` opened the correctly encoded local results in one new tab and dismissed the popup while retaining the original fixture tab. Physical Escape closed the native popup before the extension’s DOM handler ran. The standalone-page UI check exercises that DOM handler, which does not verify native Escape interception. Firefox 140 and native external-engine submission still need coverage.
 
 The shortcut row was visually referenced against Firefox 160’s `about:keyboard` page, including its rounded field and pencil/clear controls. In the installed extension, × cleared the assignment, Restore brought back ⇧⌘K, and recording ⇧⌘U saved it when the keys were released. The replacement reopened the popup successfully. Clearing and restoring afterward left ⇧⌘K in place. The temporary debugging tab was closed and the original tabs were preserved. Unit tests and isolated Firefox UI checks cover clear failures, cancellation, recording, and the single-row layout at 300px.
 
@@ -89,6 +105,10 @@ Native Firefox 160 verification also confirmed that committing a local address f
 | `popup.html`, `popup.css` | Accessible combobox/listbox UI, stable popup layout, and light/dark appearance. |
 | `popup.js` | Focus requests, selection, keyboard/mouse interaction, preferences, and live tab updates. |
 | `popup-input.js` | Keeps the authored filtering query separate from selected URL previews and input icon intent. |
+| `site-search.js` | Site-search state, keyword matching, and safe reusable search-definition parsing. |
+| `background.js` | Firefox MV3 module event page for optional discovery. |
+| `site-discovery-service.js` | Discovery preference, page-access lifecycle, existing/future tab scanning, and metadata fetches. |
+| `site-discovery.js` | Injected extraction of supported page search metadata without reading user-entered values. |
 | `history-search.js` | Debounces bounded history queries and discards replies superseded by typing or popup closure. |
 | `shortcut-settings.js` | Captures and validates combinations; reads, saves, clears, and restores only this extension’s popup command. |
 | `favicon-cache.js` | Keeps bounded, browser-supplied inline icons by origin for the input and result rows, without network requests. |
@@ -100,16 +120,18 @@ Native Firefox 160 verification also confirmed that committing a local address f
 | `tests/` | Node tests with deterministic race and failure coverage. |
 | `scripts/` | Checks, local preview, packaging, and optional Firefox smoke testing. |
 
-The package contains the popup runtime, shared modules, preview data, icons, and license.
+The package contains the popup and background runtime, shared modules, preview data, icons, and license.
 
 ## Privacy and permissions
 
 - **tabs:** Read titles and URLs to match your open tabs locally.
 - **history:** Find matching previously visited URLs and titles while you type. Results stay in popup memory and are never written back to history.
-- **search:** Submit queries through Firefox’s current default search engine.
-- **storage:** Keep a bounded icon cache in `storage.local` across browser sessions. Private-window icons stay in that popup’s memory only. Shortcut assignments are managed by Firefox’s commands API.
+- **search:** Read installed engines and submit queries through Firefox’s current default engine or an explicitly selected installed engine.
+- **storage:** Keep a bounded icon cache, the discovery preference, and learned search definitions in `storage.local` across browser sessions. Private-window icons stay in that popup’s memory only. Shortcut assignments are managed by Firefox’s commands API.
+- **scripting:** Extract supported search metadata from permitted normal HTTP(S) pages when automatic discovery is enabled.
+- **Optional HTTP(S) page access:** Requested by **Allow website access** in Preferences to scan normal pages and fetch their advertised OpenSearch metadata. Discovery does not run without the preference and access, even though the preference defaults to on.
 
-Tab matching stays local. Tab titles and full URLs are not logged or saved. The icon cache stores at most 64 site origins and inline images, each encoded image limited to 64 KiB, with no URL paths or queries. SVG icons are displayed exclusively as images, never inserted as document markup. It makes no favicon requests. Only a query you deliberately submit is passed to Firefox’s chosen search engine. There are no analytics. The content security policy blocks network connections from the extension UI.
+Tab matching stays local. Tab titles and full visited URLs are not logged or saved. The icon cache stores at most 64 site origins and inline images, each encoded image limited to 64 KiB, with no URL paths or queries. SVG icons are displayed exclusively as images, never inserted as document markup. It makes no favicon requests. Learned searches store only local names, keywords, origins, and reusable templates; user-entered form values, account/session parameters, entered search queries, and query history are not saved, and there is no sync storage. Only a query you deliberately submit is passed to the chosen search destination. There are no analytics. The popup blocks network connections; background network access is limited to HTTP(S) discovery metadata with granted page access.
 
 Firefox does not expose its full internal Places favicon cache through a public extension API. Icons for previously visited sites are available when an open tab supplies an inline icon or the extension cached one while the popup was open. Cached icons survive closing a tab and restarting Firefox. History search does not provide favicon images. See [Mozilla’s favicon API tracking issue](https://bugzilla.mozilla.org/show_bug.cgi?id=1315616).
 
@@ -122,6 +144,11 @@ Before release, verify the following in current stable Firefox and Firefox 140:
 - Switching activates an existing tab in the same window without removing browsing tabs.
 - Addresses and searches reuse the captured Home/New Tab placeholder when it is still eligible; otherwise they create exactly one destination tab in the same window.
 - Arrow keys, click, Escape, forced address/search actions, and preferences work.
+- A site hint is independent of the selected normal result; Tab enters the chip, hides ordinary results, and submits to the chosen installed or learned site.
+- ⌘Enter / Ctrl+Enter keeps the site; empty Backspace and clicking the chip restore the prefix; native Escape closes the popup; reopening starts fresh. Verify first-Escape exit/clear only where the host delivers the key.
+- Installed engines work immediately; ordinary searches still use Firefox’s current default engine.
+- Discovery defaults to a checked toggle without learning before access is granted. **Allow website access** requests permission; approving scans existing normal tabs and permits learning on later visits, while declining preserves the preference. Private tabs, POST, ambiguous forms, and JavaScript-only searches are excluded.
+- Disabling discovery or revoking access stops learning and retains definitions. Clearing learned searches leaves the toggle, grants, and installed engines unchanged, and later visits can relearn while enabled with access.
 - Arrow previews preserve the original result list, restore the query on the search action, and use edited preview text as the new query.
 - Input icons track the highlighted action; cached site icons stay local and private-window icons are not persisted.
 - Closed or moved results, multiple windows, pinned/discarded tabs, and no matches behave predictably.

@@ -205,15 +205,26 @@ export function createPopupController(api) {
   }
 
   async function search(query) {
+    return commitSearch(query);
+  }
+
+  async function searchEngine(query, engineName) {
+    return commitSearch(query, { engine: engineName });
+  }
+
+  async function commitSearch(query, searchProperties = {}) {
     return exclusively(async () => {
       if (typeof query !== "string" || !query.trim()) throw new Error("Enter something to search for.");
+      if ("engine" in searchProperties && (typeof searchProperties.engine !== "string" || !searchProperties.engine.trim())) {
+        throw new Error("Choose a Firefox search engine to continue.");
+      }
       if (!api.search?.search) throw new Error("Firefox search is unavailable. Check the extension's search permission.");
       const reusable = await reusableContextTab();
       assertReady();
       if (reusable && reuseAvailable) {
         reuseAvailable = false;
         try {
-          await api.search.search({ query: query.trim(), tabId: reusable.id });
+          await api.search.search({ query: query.trim(), ...searchProperties, tabId: reusable.id });
           return await existingTab(reusable.id);
         } catch {
           // Reused tabs existed before the popup opened and are never owned
@@ -230,7 +241,7 @@ export function createPopupController(api) {
         const destination = await existingTab(created.id);
         if (!isUntouchedBlank(destination)) throw new Error("The new search tab changed before searching");
         assertReady();
-        await api.search.search({ query: query.trim(), tabId: created.id });
+        await api.search.search({ query: query.trim(), ...searchProperties, tabId: created.id });
         phase = "activating";
         await existingTab(created.id);
         await api.tabs.update(created.id, { active: true });
@@ -260,7 +271,7 @@ export function createPopupController(api) {
     subscribers.clear();
   }
 
-  return { initialize, refresh, switchTo, navigate, search, subscribe, dispose };
+  return { initialize, refresh, switchTo, navigate, search, searchEngine, subscribe, dispose };
 }
 
 function isUntouchedBlank(tab) {
