@@ -62,19 +62,24 @@ jobs:
             echo "current=false" >> "$GITHUB_OUTPUT"
             echo "Mozilla submission skipped: a newer commit is already on main." >> "$GITHUB_STEP_SUMMARY"
           fi
-      - name: Run checks for a manual submission
-        if: steps.head.outputs.current == 'true' && github.event_name == 'workflow_dispatch'
-        run: npm test
-      - name: Build the release
+      - name: Check for a new manifest version
+        id: version
         if: steps.head.outputs.current == 'true'
         env:
-          RELEASE_BUILD_NUMBER: ${{ github.run_number }}
+          AMO_API_KEY: ${{ secrets.AMO_API_KEY }}
+          AMO_API_SECRET: ${{ secrets.AMO_API_SECRET }}
+        run: node scripts/amo-release-check.mjs
+      - name: Run checks for a manual submission
+        if: steps.version.outputs.publish == 'true' && github.event_name == 'workflow_dispatch'
+        run: npm test
+      - name: Build the release
+        if: steps.version.outputs.publish == 'true'
         run: npm run build
       - name: Validate with Mozilla's linter
-        if: steps.head.outputs.current == 'true'
+        if: steps.version.outputs.publish == 'true'
         run: npm exec --yes --package=web-ext@10.8.0 -- web-ext lint --source-dir dist/extension --no-config-discovery
       - name: Save the submitted package
-        if: steps.head.outputs.current == 'true'
+        if: steps.version.outputs.publish == 'true'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: search-or-switch-amo-${{ github.run_number }}
@@ -82,7 +87,7 @@ jobs:
           if-no-files-found: error
           retention-days: 30
       - name: Submit to Mozilla Add-ons
-        if: steps.head.outputs.current == 'true'
+        if: steps.version.outputs.publish == 'true'
         env:
           WEB_EXT_API_KEY: ${{ secrets.AMO_API_KEY }}
           WEB_EXT_API_SECRET: ${{ secrets.AMO_API_SECRET }}
@@ -95,7 +100,7 @@ jobs:
           --no-config-discovery
           --no-input
       - name: Record the submission
-        if: steps.head.outputs.current == 'true'
+        if: steps.version.outputs.publish == 'true'
         run: |
           version="$(node -p "JSON.parse(require('fs').readFileSync('dist/extension/manifest.json', 'utf8')).version")"
           echo "Submitted Search or Switch $version to Mozilla Add-ons. Mozilla review and publication may follow after this workflow finishes." >> "$GITHUB_STEP_SUMMARY"
