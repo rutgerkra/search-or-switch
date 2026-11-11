@@ -11,6 +11,7 @@ An Arc-inspired, keyboard-first tab switcher for Firefox. Open the popup, type, 
 - Search open tabs in the current window, with browsing-history suggestions below them.
 - Preview destinations with the arrow keys, including locally cached favicons.
 - Search using Firefox’s default search engine.
+- Open a typed URL with Enter; its address is always first. Web search is second whenever another result is available.
 - Press **Tab** on a site hint to search that site. Firefox-installed engines are available immediately; automatic discovery can learn supported searches after you grant website access.
 - Create a tab only when you commit an address or search. Reuse the current Firefox Home/New Tab page when available.
 - Open with **Shift+Cmd+K** on macOS, **Ctrl+Shift+K** on Windows, or **Ctrl+Shift+Space** on Linux, or use the toolbar button.

@@ -245,7 +245,16 @@ function render(preserveSelection = false) {
   const historyMatches = state.site ? [] : rankHistory(state.history, query, { tabs: state.tabs });
   state.rows.push(...historyMatches.map((item) => ({ type: "history", history: item, target: { type: "url", url: item.url }, key: `history-${item.url}` })));
   const target = state.site ? resolveSiteSearch(state.site, query) : resolveInput(query);
-  if (target.type !== "empty") state.rows.push({ type: state.site ? "site-search" : "action", target, key: "action" });
+  if (!state.site && target.type === "url") {
+    state.rows.unshift(
+      { type: "action", target, key: "url-action" },
+      { type: "action", target: { type: "search", query }, key: "action" },
+    );
+  } else if (!state.site && target.type === "search") {
+    state.rows.splice(Math.min(1, state.rows.length), 0, { type: "action", target, key: "action" });
+  } else if (target.type !== "empty") {
+    state.rows.push({ type: state.site ? "site-search" : "action", target, key: "action" });
+  }
   const previousIndex = previousKey ? state.rows.findIndex((row) => row.key === previousKey) : -1;
   const selectionLost = state.previewSelection && previousKey && previousKey !== "action" && previousIndex < 0;
   if (selectionLost) state.selectionLost = true;
@@ -260,7 +269,7 @@ function render(preserveSelection = false) {
   $("empty-state").textContent = state.site ? `Type to search ${state.site.name}.` : state.ready ? "No open tabs." : "Finding your open tabs…";
   setSelection(selection, false, previewSelection);
   if (selectionLost) showError(previousKey.startsWith("history-") ? "That history result is no longer available. Choose another result." : "That tab is no longer available. Choose another result.");
-  const actionAnnouncement = target.type === "invalid" ? target.message : `${target.type === "url" ? "Open address" : "Web search"} also available.`;
+  const actionAnnouncement = target.type === "invalid" ? target.message : target.type === "url" ? "Open address and web search available." : "Web search also available.";
   announce(state.site ? `Searching ${state.site.name}. ${query ? "Press Enter to search." : "Type your query."}`
     : query ? `${allMatches.length} matching tabs. ${historyMatches.length} history results. ${actionAnnouncement}` : `${allMatches.length} open tabs in this window.`);
 }

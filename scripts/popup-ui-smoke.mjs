@@ -153,6 +153,8 @@ async function typeAtlas(page){
   assert.equal(await page.$$eval('[role=option]',rows=>rows.length),3);
   assert.equal(await page.$eval('#query',element=>element.value),'atlas');
   await page.keyboard.press('ArrowDown');
+  assert.equal(await page.$eval('[aria-selected=true]',element=>element.dataset.action),'search');
+  await page.keyboard.press('ArrowDown');
   assert.equal(await page.$eval('#query',element=>element.value),origin+'/fixture/notes');
   assert.equal(await page.$eval('[aria-selected=true]',element=>element.textContent.includes('Atlas Notes')),true);
 }
@@ -565,15 +567,74 @@ try{
     assert.deepEqual((await page.evaluate(()=>window.__popupFake.calls)).filter(call=>call[0]==='history-search'),[]);
     await page.type('#query','atlas');
     await page.waitForSelector('[data-type=history]');
-    assert.deepEqual(await page.$$eval('[role=option]',rows=>rows.map(row=>row.dataset.type)),['tab','tab','history','action']);
+    assert.deepEqual(await page.$$eval('[role=option]',rows=>rows.map(row=>row.dataset.type)),['tab','action','tab','history']);
     assert.equal(await page.$eval('#results',element=>/hidden-secret|private-fragment/.test(element.textContent)),false);
     assert.deepEqual((await page.evaluate(()=>window.__popupFake.calls)).filter(call=>call[0]==='history-search'),[['history-search',{text:'atlas',startTime:0,maxResults:100}]]);
+    await page.keyboard.press('ArrowDown');
+    assert.equal(await page.$eval('#query',element=>element.value),'atlas');
+    assert.equal(await page.$eval('[aria-selected=true]',element=>element.dataset.action),'search');
     await page.keyboard.press('ArrowDown');await page.keyboard.press('ArrowDown');
     assert.equal(await page.$eval('#query',element=>element.value),origin+'/fixture/guide?token=hidden-secret#private-fragment');
-    await page.keyboard.press('ArrowDown');assert.equal(await page.$eval('#query',element=>element.value),'atlas');
-    await page.keyboard.press('ArrowUp');await page.keyboard.press('Enter');await waitClosed(page);
+    await page.keyboard.press('Enter');await waitClosed(page);
     assert.deepEqual(mutations(await page.evaluate(()=>window.__popupFake.calls)),[['create',{url:origin+'/fixture/guide?token=hidden-secret#private-fragment',active:true,windowId:1}]]);
-    pass('history follows open tabs, removes duplicate/open URLs, hides URL secrets in labels, and opens its selected destination');await page.close();
+    pass('search stays second ahead of remaining tabs and history; history removes duplicate/open URLs and opens its full destination');await page.close();
+  }
+  {
+    const page=await openCase({historyItems:[
+      {title:'Museum collection',url:'https://museum.example/collection',lastVisitTime:100},
+      {title:'Museum archive',url:'https://museum.example/archive',lastVisitTime:90},
+    ]});
+    await page.type('#query','museum');await page.waitForSelector('[data-type=history]');
+    assert.deepEqual(await page.$$eval('[role=option]',rows=>rows.map(row=>row.dataset.type)),['history','action','history']);
+    assert.equal(await page.$eval('[aria-selected=true]',element=>element.dataset.index),'0');
+    await page.keyboard.press('ArrowDown');
+    assert.equal(await page.$eval('#query',element=>element.value),'museum');
+    assert.equal(await page.$eval('[aria-selected=true]',element=>element.dataset.action),'search');
+    await page.keyboard.press('Enter');await waitClosed(page);
+    assert.equal(mutations(await page.evaluate(()=>window.__popupFake.calls)).find(call=>call[0]==='search')[1].query,'museum');
+    pass('with history-only matches, the best history result is selected first and one Down then Enter searches');await page.close();
+  }
+  for(const query of ['google.com','https://google.com/docs?q=typed#section','localhost:3000/app']){
+    const url=query.startsWith('https:')?query:query.startsWith('localhost')?'http://'+query:'https://'+query+'/';
+    const page=await openCase({contextUrl:'about:newtab',deferHistory:true,historyItems:[{title:query+' previous search',url:'https://history.example/search?q='+encodeURIComponent(query),lastVisitTime:999}]});
+    await page.evaluate(query=>window.__popupFake.updateTab(20,{title:query+' matching tab'}),query);
+    await page.type('#query',query);
+    await page.waitForFunction(query=>window.__popupFake.pendingHistory.some(item=>item.query===query),{},query);
+    await page.evaluate(query=>window.__popupFake.resolveHistory(query),query);await page.waitForSelector('[data-type=history]');
+    assert.deepEqual(await page.$$eval('[role=option]',rows=>rows.map(row=>row.dataset.action||row.dataset.type)),['url','search','tab','history']);
+    assert.equal(await page.$eval('[aria-selected=true]',element=>element.dataset.action),'url');
+    assert.equal(await page.$eval('#query',element=>element.value),query);
+    assert.equal(await page.$eval('#query',element=>element.dataset.action),'url');
+    assert.deepEqual(mutations(await page.evaluate(()=>window.__popupFake.calls)),[]);
+    await page.keyboard.press('Enter');await waitClosed(page);
+    assert.deepEqual(mutations(await page.evaluate(()=>window.__popupFake.calls)),[['update',10,{url}]]);
+    pass(`Enter opens the typed address ${query} ahead of matching tabs and late history`);await page.close();
+  }
+  {
+    const query='google.com';
+    const page=await openCase({contextUrl:'about:home',deferHistory:true,historyItems:[{title:'Google history',url:'https://google.com/search?q=old'}]});
+    await page.type('#query',query);
+    await page.waitForFunction(()=>window.__popupFake.pendingHistory.some(item=>item.query==='google.com'));
+    assert.deepEqual(await page.$$eval('[role=option]',rows=>rows.map(row=>row.dataset.action)),['url','search']);
+    await page.keyboard.press('ArrowDown');
+    assert.equal(await page.$eval('#query',element=>element.value),query);
+    assert.equal(await page.$eval('#query-icon',element=>element.dataset.kind),'search');
+    await page.evaluate(()=>window.__popupFake.resolveHistory('google.com'));await page.waitForSelector('[data-type=history]');
+    await page.evaluate(()=>window.__popupFake.updateTab(20,{title:'google.com new matching tab'}));
+    await page.waitForSelector('[data-type=tab]');
+    assert.equal(await page.$eval('[aria-selected=true]',element=>element.dataset.index),'1');
+    assert.equal(await page.$eval('[aria-selected=true]',element=>element.dataset.action),'search');
+    await page.keyboard.press('Enter');await waitClosed(page);
+    assert.deepEqual(mutations(await page.evaluate(()=>window.__popupFake.calls)),[['search',{query,tabId:10}]]);
+    pass('a URL has a separate second search choice even without matches, and async updates preserve its explicit selection');await page.close();
+  }
+  {
+    const page=await openCase();await page.type('#query','no fixture matches this phrase');
+    assert.deepEqual(await page.$$eval('[role=option]',rows=>rows.map(row=>row.dataset.action)),['search']);
+    assert.equal(await page.$eval('[aria-selected=true]',element=>element.dataset.index),'0');
+    await page.keyboard.press('Enter');await waitClosed(page);
+    assert.equal(mutations(await page.evaluate(()=>window.__popupFake.calls)).find(call=>call[0]==='search')[1].query,'no fixture matches this phrase');
+    pass('a text query without matches keeps web search as the sole selected result');await page.close();
   }
   for(const contextUrl of [undefined,'about:newtab','about:home']){
     const url='https://museum.example/collection';
@@ -674,7 +735,7 @@ try{
     const cachedIcons=await page.evaluate(()=>window.__popupFake.localData().faviconCacheV1);
     await page.type('#query',origin+'/previously-visited');
     await page.waitForFunction(()=>document.querySelector('#query-icon img')?.naturalWidth>0&&document.querySelector('[role=option] .site-icon img')?.naturalWidth>0);
-    assert.equal(await page.$$eval('[role=option]',rows=>rows.length),1);
+    assert.deepEqual(await page.$$eval('[role=option]',rows=>rows.map(row=>row.dataset.action)),['url','search']);
     assert.deepEqual(mutations(await page.evaluate(()=>window.__popupFake.calls)),[]);
     await page.close();
     const reopened=await openCase({cachedIcons});
@@ -695,7 +756,7 @@ try{
     pass('CtrlEnter after preview opens displayed URL in exactly one new tab');await page.close();
   }
   {
-    const page=await openCase();await typeAtlas(page);await page.keyboard.press('ArrowDown');
+    const page=await openCase();await typeAtlas(page);await page.keyboard.press('ArrowUp');
     assert.equal(await page.$eval('#query',element=>element.value),'atlas');
     assert.equal(await page.$eval('[aria-selected=true]',element=>element.dataset.action==='search'),true);
     assert.equal(await page.$eval('[data-action=search] .result-title',element=>element.textContent),'atlas');
@@ -722,7 +783,7 @@ try{
         : 'CtrlEnter from about:blank preserves the original tab and creates one destination tab');await page.close();
     }
     {
-      const page=await openCase({contextUrl});await typeAtlas(page);await page.keyboard.press('ArrowDown');
+      const page=await openCase({contextUrl});await typeAtlas(page);await page.keyboard.press('ArrowUp');
       assert.equal(await page.$eval('#query',element=>element.value),'atlas');
       assert.equal(await page.$eval('[aria-selected=true]',element=>element.dataset.action==='search'),true);
       await page.keyboard.press('Enter');await waitClosed(page);
@@ -743,7 +804,7 @@ try{
     await page.waitForFunction(()=>document.querySelector('[aria-selected=true]')?.textContent.includes('Atlas Notes updated'));
     assert.equal(await page.$eval('#query',element=>element.value),origin+'/fixture/notes');
     assert.equal(await page.$$eval('[role=option]',items=>items.length),rows.length);
-    await page.keyboard.press('ArrowDown');
+    await page.keyboard.press('ArrowUp');
     assert.equal(await page.$eval('#query',element=>element.value),'atlas');
     pass('async tab refresh preserves preview, filtered result count, and original draft');await page.close();
   }
