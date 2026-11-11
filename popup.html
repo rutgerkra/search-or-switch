@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="light dark">
+    <title>Search or Switch</title>
+    <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="popup.css">
+    <script src="popup.js" type="module"></script>
+  </head>
+  <body>
+    <section class="search-view" id="search-view">
+    <main>
+      <h1 class="sr-only">Search open tabs or open something new</h1>
+      <div class="palette" id="palette">
+        <div class="search-bar">
+          <span class="input-icon" id="query-icon" aria-hidden="true"></span>
+          <label class="sr-only" for="query">Search open tabs or enter a URL</label>
+          <input id="query" type="text" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="results" placeholder="Search or Enter URL..." autocomplete="off" spellcheck="false" autocapitalize="none" autofocus>
+          <button class="clear-button" id="clear" type="button" aria-label="Clear search" hidden>×</button>
+        </div>
+        <div id="results" class="results" role="listbox" aria-label="Open tabs, history and actions" aria-busy="true"></div>
+        <p id="empty-state" class="empty-state" hidden>No open tabs.</p>
+        <p id="error" class="error" role="alert" hidden></p>
+      </div>
+      <p id="announcer" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></p>
+    </main>
+    <footer class="page-footer"><button class="settings-button" id="settings-open" type="button">Preferences</button></footer>
+    <p id="below-palette" hidden></p>
+    </section>
+    <section class="settings-view" id="settings" aria-labelledby="settings-title" hidden>
+      <header class="settings-heading">
+        <button id="settings-close" class="settings-back" aria-label="Back to search" type="button"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="m10 3-5 5 5 5"/></svg></button>
+        <h1 id="settings-title">Preferences</h1>
+      </header>
+      <div class="settings-content">
+      <h2>Keyboard shortcuts</h2>
+      <div class="shortcut-row" id="shortcut-row" data-editing="false">
+        <span class="shortcut-action">Open switcher</span>
+        <div class="shortcut-field">
+          <output class="shortcut-keys" id="shortcut-current" aria-label="Current keyboard shortcut" aria-describedby="shortcut-error" aria-live="polite">Loading…</output>
+          <input class="shortcut-capture" id="shortcut-input" type="text" readonly hidden placeholder="Press keys…" aria-label="Shortcut for Open switcher" aria-describedby="shortcut-error" autocomplete="off" spellcheck="false">
+        </div>
+        <button class="shortcut-icon-button shortcut-edit" id="shortcut-edit" type="button" aria-label="Edit shortcut" title="Edit shortcut" disabled><svg viewBox="0 0 16 16" aria-hidden="true"><path d="m10.5 2.5 3 3M2.5 13.5l3.5-.7 7.5-7.5a1.4 1.4 0 0 0 0-2l-.8-.8a1.4 1.4 0 0 0-2 0L3.2 10z"/></svg></button>
+        <button class="shortcut-icon-button shortcut-end" id="shortcut-clear" type="button" aria-label="Clear shortcut" title="Clear shortcut" disabled><svg viewBox="0 0 16 16" aria-hidden="true"><path d="m3.5 3.5 9 9m0-9-9 9"/></svg></button>
+        <button class="shortcut-icon-button shortcut-end" id="shortcut-reset" type="button" aria-label="Restore default shortcut" title="Restore default shortcut" hidden disabled><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 5.5A5.5 5.5 0 1 1 2.5 10M2.5 2v4h4"/></svg></button>
+        <button class="shortcut-icon-button shortcut-end" id="shortcut-cancel" type="button" aria-label="Cancel editing" title="Cancel editing" hidden><svg viewBox="0 0 16 16" aria-hidden="true"><path d="m3.5 3.5 9 9m0-9-9 9"/></svg></button>
+      </div>
+      <p class="field-error" id="shortcut-error" role="alert" hidden></p>
+      <p class="sr-only" id="shortcut-status" role="status" hidden></p>
+      </div>
+    </section>
+  </body>
+</html>

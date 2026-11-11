@@ -1,0 +1,28 @@
+{
+  "name": "search-or-switch",
+  "version": "0.1.0",
+  "private": true,
+  "license": "MIT",
+  "author": "Rutger Kraaijer",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/rutgerkra/search-or-switch.git"
+  },
+  "homepage": "https://github.com/rutgerkra/search-or-switch#readme",
+  "bugs": {
+    "url": "https://github.com/rutgerkra/search-or-switch/issues"
+  },
+  "type": "module",
+  "description": "A keyboard-first Firefox popup to switch tabs, open addresses, and search.",
+  "scripts": {
+    "test": "node --test tests/*.test.js",
+    "test:ui": "node scripts/popup-ui-smoke.mjs",
+    "test:firefox": "npm run build && python3 scripts/firefox-smoke.py",
+    "check": "node scripts/check.mjs",
+    "dev": "node scripts/serve.mjs",
+    "build": "node scripts/build.mjs"
+  },
+  "engines": {
+    "node": ">=22.12"
+  }
+}

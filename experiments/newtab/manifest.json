@@ -1,0 +1,29 @@
+{
+  "manifest_version": 3,
+  "name": "Search or Switch",
+  "version": "0.1.0",
+  "description": "A quieter new tab. Find an open tab, enter a URL, or search the web—all from your keyboard.",
+  "permissions": ["tabs", "search", "storage"],
+  "chrome_url_overrides": {
+    "newtab": "newtab.html"
+  },
+  "icons": {
+    "48": "icons/icon.svg",
+    "96": "icons/icon.svg"
+  },
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "search-or-switch@ffarc.local",
+      "strict_min_version": "140.0",
+      "data_collection_permissions": {
+        "required": ["none"]
+      }
+    },
+    "gecko_android": {
+      "strict_min_version": "142.0"
+    }
+  },
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'none'; connect-src 'none'; img-src 'self' data:; style-src 'self'; base-uri 'none'; form-action 'none'"
+  }
+}
