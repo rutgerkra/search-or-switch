@@ -23,6 +23,14 @@
           <button id="site-hint" class="site-hint" type="button" hidden><span id="site-hint-label"></span><kbd>Tab</kbd></button>
           <button class="clear-button" id="clear" type="button" aria-label="Clear search" hidden>×</button>
         </div>
+        <section id="discovery-prompt" class="discovery-prompt" role="group" aria-labelledby="discovery-prompt-copy" hidden>
+          <p id="discovery-prompt-copy">Allow website access to discover search shortcuts as you browse.</p>
+          <div class="discovery-prompt-actions">
+            <button id="discovery-prompt-allow" class="settings-action discovery-prompt-allow" type="button">Allow website access</button>
+            <button id="discovery-prompt-disable" class="settings-action" type="button">Turn off discovery</button>
+          </div>
+          <p id="discovery-prompt-error" class="field-error" role="alert" hidden></p>
+        </section>
         <div id="results" class="results" role="listbox" aria-label="Open tabs, history and actions" aria-busy="true"></div>
         <p id="empty-state" class="empty-state" hidden>No open tabs.</p>
         <p id="error" class="error" role="alert" hidden></p>

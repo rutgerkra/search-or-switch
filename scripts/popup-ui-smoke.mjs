@@ -49,7 +49,7 @@ let passed=0;
 function pass(name){passed++;console.log('PASS',name);}
 function mutations(calls){return calls.filter(call=>['create','update','remove','search'].includes(call[0]));}
 
-async function openCase({contextUrl,shortcut,failShortcutUpdate=false,favicon,cachedIcons=[],historyItems=[],deferHistory=false,failHistory=false,engines=[],learned=[],discoveryEnabled=false,discoveryGranted=discoveryEnabled,denyDiscovery=false,failEngines=false,failDiscovery=false}={}){
+async function openCase({contextUrl,shortcut,failShortcutUpdate=false,favicon,cachedIcons=[],historyItems=[],deferHistory=false,failHistory=false,engines=[],learned=[],discoveryEnabled=false,discoveryGranted=discoveryEnabled,denyDiscovery=false,failPermissionRequest=false,failDiscoveryUpdate=false,deferDiscoveryUpdate=false,failEngines=false,failDiscovery=false}={}){
   const page=await browser.newPage();
   page.setDefaultTimeout(5000);
   page.on('pageerror',error=>errors.push(error.message));
@@ -85,14 +85,16 @@ async function openCase({contextUrl,shortcut,failShortcutUpdate=false,favicon,ca
         id:'input-commit-smoke@test',onMessage:event('runtimeMessage'),
         async sendMessage(message){
           calls.push(['site-search-message',copy(message)]);
-          if(options.failDiscovery)throw new Error('Fixture discovery unavailable');
+          if(window.__popupFake.failDiscovery)throw new Error('Firefox could not update site searches. Try again.');
+          if(message.type==='site-search:set-enabled'&&window.__popupFake.failDiscoveryUpdate)throw new Error('Firefox could not save site-discovery preferences. Try again.');
+          if(message.type==='site-search:set-enabled'&&options.deferDiscoveryUpdate)await new Promise(resolve=>{window.__popupFake.completeDiscoveryUpdate=resolve;});
           if(message.type==='site-search:set-enabled')siteState.enabled=message.enabled&&discoveryGranted;
           if(message.type==='site-search:clear')siteState.learned=[];
           siteState.permitted=discoveryGranted;
           return copy(siteState);
         },
       },
-      permissions:{async request(details){calls.push(['permissions-request',copy(details)]);discoveryGranted=!options.denyDiscovery;return discoveryGranted;}},
+      permissions:{async request(details){calls.push(['permissions-request',copy(details)]);if(window.__popupFake.failPermissionRequest)throw new Error('Firefox could not request website access. Try again.');discoveryGranted=!options.denyDiscovery;return discoveryGranted;}},
       tabs:{
         async query(query){calls.push(['query',copy(query)]);return [...records.values()].filter(tab=>tab.windowId===(query.currentWindow?1:query.windowId)&&(!query.active||tab.active)).map(copy);},
         async get(id){calls.push(['get',id]);if(!records.has(id))throw new Error('Tab closed');return copy(records.get(id));},
@@ -127,6 +129,8 @@ async function openCase({contextUrl,shortcut,failShortcutUpdate=false,favicon,ca
       calls,
       isMac,defaultShortcut,
       failShortcutUpdate:options.failShortcutUpdate,
+      failPermissionRequest:options.failPermissionRequest,failDiscoveryUpdate:options.failDiscoveryUpdate,
+      failDiscovery:options.failDiscovery,
       currentShortcut:()=>currentShortcut,
       localData:()=>api.storage.local.snapshot(),
       historyItems:copy(options.historyItems),pendingHistory:[],
@@ -135,8 +139,9 @@ async function openCase({contextUrl,shortcut,failShortcutUpdate=false,favicon,ca
       updateTab(id,changes){Object.assign(records.get(id),changes);for(const listener of events.updated)listener(id,copy(changes),copy(records.get(id)));},
       removeTab(id){const tab=records.get(id);records.delete(id);for(const listener of events.removed)listener(id,{windowId:tab.windowId});},
       learnSite(site){siteState.learned.push(copy(site));for(const listener of events.runtimeMessage)listener({type:'site-search:changed'});},
+      setWebsiteAccess(permitted){discoveryGranted=permitted;siteState.permitted=permitted;for(const listener of events.runtimeMessage)listener({type:'site-search:changed'});},
     };
-  },origin,{contextUrl,shortcut,failShortcutUpdate,favicon,cachedIcons,historyItems,deferHistory,failHistory,engines,learned,discoveryEnabled,discoveryGranted,denyDiscovery,failEngines,failDiscovery});
+  },origin,{contextUrl,shortcut,failShortcutUpdate,favicon,cachedIcons,historyItems,deferHistory,failHistory,engines,learned,discoveryEnabled,discoveryGranted,denyDiscovery,failPermissionRequest,failDiscoveryUpdate,deferDiscoveryUpdate,failEngines,failDiscovery});
   await page.goto(origin,{waitUntil:'load',timeout:5000});
   await page.waitForFunction(()=>document.querySelector('#results').getAttribute('aria-busy')==='false');
   assert.equal(await page.$eval('#error',element=>element.textContent),'');
@@ -175,6 +180,184 @@ async function shortcutPlatform(page){
 try{
   browser=await puppeteer.launch({browser:'firefox',executablePath:firefoxExecutable,headless:true,timeout:15000,protocolTimeout:10000,defaultViewport:{width:1000,height:800}});
   console.log('BROWSER',await browser.version());
+  {
+    const page=await openCase({discoveryEnabled:true,discoveryGranted:false});
+    await page.waitForSelector('#discovery-prompt',{visible:true});
+    assert.equal(await page.evaluate(()=>document.activeElement.id),'query');
+    assert.equal(await page.$eval('#discovery-prompt-copy',element=>element.textContent),'Allow website access to discover search shortcuts as you browse.');
+    assert.deepEqual(await page.$$eval('#discovery-prompt button',buttons=>buttons.map(button=>button.textContent)),['Allow website access','Turn off discovery']);
+    await page.type('#query','atlas');
+    assert.equal(await page.$$eval('[role=option]',rows=>rows.length),3);
+    assert.equal(await page.$eval('#query',element=>element.value),'atlas');
+    for(const width of [560,300]){
+      await page.setViewport({width,height:600});
+      const layout=await page.evaluate(()=>{
+        const box=selector=>document.querySelector(selector).getBoundingClientRect();
+        const prompt=box('#discovery-prompt'),search=box('.search-bar'),results=box('#results');
+        const allow=box('#discovery-prompt-allow'),disable=box('#discovery-prompt-disable');
+        return {belowSearch:prompt.top>=search.bottom,aboveResults:prompt.bottom<=results.top,horizontal:Math.abs(allow.top-disable.top)<1&&allow.right<=disable.left,noOverflow:document.documentElement.scrollWidth<=innerWidth};
+      });
+      assert.deepEqual(layout,{belowSearch:true,aboveResults:true,horizontal:true,noOverflow:true});
+    }
+    assert.deepEqual(mutations(await page.evaluate(()=>window.__popupFake.calls)),[]);
+    pass('missing website access shows a compact horizontal prompt without blocking search or stealing initial focus');await page.close();
+    for(const options of [{discoveryEnabled:false,discoveryGranted:false},{discoveryEnabled:true,discoveryGranted:true}]){
+      const other=await openCase(options);
+      await other.waitForFunction(()=>!document.querySelector('#discovery-enabled').disabled);
+      assert.equal(await other.$eval('#discovery-prompt',element=>element.hidden),true);
+      await other.close();
+    }
+    pass('the prompt stays hidden when discovery is disabled or website access is already granted');
+  }
+  {
+    const page=await openCase({discoveryEnabled:true,discoveryGranted:false,engines:[{name:'YouTube'}]});
+    await page.waitForSelector('#discovery-prompt',{visible:true});await page.type('#query','atlas');
+    await page.keyboard.press('ArrowDown');
+    assert.equal(await page.evaluate(()=>document.activeElement.id),'discovery-prompt-allow');
+    assert.equal(await page.$eval('#query',element=>element.value),'atlas');
+    assert.equal(await page.$$eval('[aria-selected=true]',rows=>rows.length),0);
+    assert.equal(await page.$eval('#query',element=>element.getAttribute('aria-activedescendant')),null);
+    assert.equal(await page.$eval('#discovery-prompt-allow',element=>getComputedStyle(element).outlineStyle!=='none'),true);
+    await page.keyboard.press('ArrowRight');
+    assert.equal(await page.evaluate(()=>document.activeElement.id),'discovery-prompt-disable');
+    await page.keyboard.press('ArrowLeft');
+    assert.equal(await page.evaluate(()=>document.activeElement.id),'discovery-prompt-allow');
+    await page.keyboard.press('ArrowRight');await page.keyboard.press('ArrowDown');
+    assert.equal(await page.evaluate(()=>document.activeElement.id),'query');
+    assert.equal(await page.$eval('#query',element=>element.getAttribute('aria-activedescendant')),'result-0');
+    assert.equal(await page.$eval('#query',element=>element.value),origin+'/fixture/atlas?view=design#draft');
+    await page.keyboard.press('ArrowUp');
+    assert.equal(await page.evaluate(()=>document.activeElement.id),'discovery-prompt-allow');
+    await page.evaluate(()=>window.__popupFake.updateTab(20,{title:'Atlas revised'}));
+    await page.waitForFunction(()=>document.querySelector('#results').textContent.includes('Atlas revised'));
+    assert.equal(await page.evaluate(()=>document.activeElement.id),'discovery-prompt-allow');
+    assert.equal(await page.$$eval('[aria-selected=true]',rows=>rows.length),0);
+    await page.keyboard.press('ArrowUp');
+    assert.equal(await page.evaluate(()=>document.activeElement.id),'query');
+    assert.equal(await page.$eval('#query',element=>element.value),'atlas');
+    await page.keyboard.press('Tab');assert.equal(await page.evaluate(()=>document.activeElement.id),'clear');
+    await page.keyboard.press('Tab');assert.equal(await page.evaluate(()=>document.activeElement.id),'discovery-prompt-allow');
+    await page.keyboard.press('Tab');assert.equal(await page.evaluate(()=>document.activeElement.id),'discovery-prompt-disable');
+    await page.keyboard.down('Shift');await page.keyboard.press('Tab');await page.keyboard.up('Shift');
+    assert.equal(await page.evaluate(()=>document.activeElement.id),'discovery-prompt-allow');
+    await page.keyboard.press('ArrowUp');await page.click('#clear');await page.type('#query','you');
+    await page.waitForFunction(()=>!document.querySelector('#site-hint').hidden);
+    await page.keyboard.press('Tab');
+    assert.equal(await page.$eval('#site-chip',element=>element.hidden),false);
+    assert.equal(await page.evaluate(()=>document.activeElement.id),'query');
+    assert.deepEqual(mutations(await page.evaluate(()=>window.__popupFake.calls)),[]);
+    pass('arrows traverse the prompt and results with real button focus while Tab navigation and Tab-to-site remain available');await page.close();
+  }
+  {
+    const page=await openCase({discoveryEnabled:true,discoveryGranted:false});
+    await page.waitForSelector('#discovery-prompt',{visible:true});await page.type('#query','atlas');
+    await page.keyboard.press('ArrowDown');await page.keyboard.press('Enter');
+    await page.waitForFunction(()=>document.querySelector('#discovery-prompt').hidden&&!document.querySelector('#discovery-enabled').disabled);
+    assert.equal(await page.evaluate(()=>document.activeElement.id),'query');
+    assert.equal(await page.$eval('#query',element=>element.value),'atlas');
+    assert.equal(await page.$eval('#discovery-enabled',element=>element.checked),true);
+    assert.equal(await page.$eval('#discovery-grant',element=>element.hidden),true);
+    assert.deepEqual((await page.evaluate(()=>window.__popupFake.calls)).filter(call=>call[0]==='permissions-request'),[['permissions-request',{origins:['http://*/*','https://*/*']}]]);
+    assert.deepEqual(mutations(await page.evaluate(()=>window.__popupFake.calls)),[]);
+    pass('Enter on Allow grants access, hides the prompt and restores the authored query and search focus');await page.close();
+  }
+  {
+    const page=await openCase({discoveryEnabled:true,discoveryGranted:false,denyDiscovery:true});
+    await page.waitForSelector('#discovery-prompt',{visible:true});await page.type('#query','atlas');
+    await page.keyboard.press('ArrowDown');await page.keyboard.press('Space');
+    await page.waitForFunction(()=>window.__popupFake.calls.some(call=>call[0]==='permissions-request')&&!document.querySelector('#discovery-prompt-allow').disabled&&document.activeElement.id==='query');
+    assert.equal(await page.$eval('#discovery-prompt',element=>element.hidden),false);
+    assert.equal(await page.$eval('#discovery-prompt-error',element=>element.hidden),true);
+    assert.equal(await page.$eval('#discovery-error',element=>element.hidden),true);
+    assert.equal(await page.$eval('#discovery-enabled',element=>element.checked),true);
+    assert.equal(await page.$eval('#query',element=>element.value),'atlas');
+    assert.equal(await page.evaluate(()=>window.__popupFake.calls.some(call=>call[0]==='site-search-message'&&call[1].type==='site-search:set-enabled')),false);
+    await page.keyboard.press('Enter');await waitClosed(page);
+    assert.deepEqual(mutations(await page.evaluate(()=>window.__popupFake.calls)),[['update',20,{active:true}]]);
+    pass('Space can request access; declining leaves the prompt without an error and preserves a usable search');await page.close();
+    const reopened=await openCase({discoveryEnabled:true,discoveryGranted:false});
+    await reopened.waitForSelector('#discovery-prompt',{visible:true});await reopened.close();
+    pass('unresolved website access remains visible on the next popup opening');
+  }
+  for(const failure of ['failPermissionRequest','failDiscoveryUpdate','failDiscovery']){
+    const page=await openCase({discoveryEnabled:true,discoveryGranted:false,[failure]:failure!=='failDiscovery'});
+    await page.waitForSelector('#discovery-prompt',{visible:true});await page.type('#query','atlas');
+    if(failure==='failDiscovery')await page.evaluate(()=>{window.__popupFake.failDiscovery=true;});
+    await page.keyboard.press('ArrowDown');
+    if(failure!=='failPermissionRequest')await page.keyboard.press('ArrowRight');
+    await page.keyboard.press('Enter');
+    await page.waitForSelector('#discovery-prompt-error',{visible:true});
+    await page.waitForFunction(()=>!document.querySelector('#discovery-prompt-allow').disabled);
+    assert.equal(await page.$eval('#discovery-prompt',element=>element.hidden),false);
+    assert.match(await page.$eval('#discovery-prompt-error',element=>element.textContent),/could not.*Try again/);
+    assert.equal(await page.evaluate(()=>document.activeElement.id),'query');
+    assert.equal(await page.$eval('#query',element=>element.value),'atlas');
+    await page.evaluate(failure=>{window.__popupFake[failure]=false;},failure);
+    await page.keyboard.press('ArrowDown');
+    if(failure!=='failPermissionRequest')await page.keyboard.press('ArrowRight');
+    await page.keyboard.press('Enter');
+    await page.waitForFunction(()=>document.querySelector('#discovery-prompt').hidden&&!document.querySelector('#discovery-enabled').disabled);
+    assert.equal(await page.$eval('#discovery-prompt-error',element=>element.hidden),true);
+    assert.deepEqual(mutations(await page.evaluate(()=>window.__popupFake.calls)),[]);
+    pass(`${failure} shows an inline error, preserves the search and lets the action be retried`);await page.close();
+  }
+  {
+    const page=await openCase({discoveryEnabled:true,discoveryGranted:true});
+    await page.type('#query','atlas');
+    await page.evaluate(()=>window.__popupFake.setWebsiteAccess(false));
+    await page.waitForSelector('#discovery-prompt',{visible:true});
+    assert.equal(await page.evaluate(()=>document.activeElement.id),'query');
+    await page.keyboard.press('ArrowDown');
+    assert.equal(await page.evaluate(()=>document.activeElement.id),'discovery-prompt-allow');
+    await page.evaluate(()=>window.__popupFake.setWebsiteAccess(true));
+    await page.waitForSelector('#discovery-prompt',{hidden:true});
+    assert.equal(await page.evaluate(()=>document.activeElement.id),'query');
+    assert.equal(await page.$eval('#query',element=>element.value),'atlas');
+    assert.deepEqual(mutations(await page.evaluate(()=>window.__popupFake.calls)),[]);
+    pass('permission changes refresh the prompt without stealing or losing search focus');await page.close();
+  }
+  {
+    const page=await openCase({discoveryEnabled:true,discoveryGranted:false});
+    await page.waitForSelector('#discovery-prompt',{visible:true});await page.type('#query','atlas');
+    await page.keyboard.press('ArrowDown');
+    await page.keyboard.down('Shift');await page.keyboard.press('Tab');await page.keyboard.press('Tab');await page.keyboard.up('Shift');
+    assert.equal(await page.evaluate(()=>document.activeElement.id),'query');
+    assert.equal(await page.$eval('#query',element=>element.value),'atlas');
+    assert.equal(await page.$eval('#query',element=>element.getAttribute('aria-activedescendant')),'result-0');
+    await page.keyboard.press('Enter');await waitClosed(page);
+    assert.deepEqual(mutations(await page.evaluate(()=>window.__popupFake.calls)),[['update',20,{active:true}]]);
+    pass('ShiftTab back from the prompt restores normal Enter behavior without editing the query');await page.close();
+  }
+  {
+    const page=await openCase({discoveryEnabled:true,discoveryGranted:false,learned:[{name:'YouTube',origin:'https://www.youtube.com',template:'https://www.youtube.com/results?search_query={searchTerms}'}]});
+    await page.waitForSelector('#discovery-prompt',{visible:true});await page.type('#query','you');
+    await page.waitForFunction(()=>!document.querySelector('#site-hint').hidden);
+    await page.keyboard.press('ArrowDown');await page.keyboard.press('ArrowRight');await page.keyboard.press('Space');
+    await page.waitForFunction(()=>document.querySelector('#discovery-prompt').hidden&&!document.querySelector('#discovery-enabled').disabled);
+    assert.equal(await page.$eval('#discovery-enabled',element=>element.checked),false);
+    assert.equal(await page.$eval('#query',element=>element.value),'you');
+    assert.equal(await page.evaluate(()=>document.activeElement.id),'query');
+    assert.equal(await page.$eval('#site-hint',element=>element.hidden),false);
+    assert.deepEqual((await page.evaluate(()=>window.__popupFake.calls)).filter(call=>call[0]==='permissions-request'),[]);
+    await page.keyboard.press('Tab');
+    assert.equal(await page.$eval('#site-chip',element=>element.textContent),'YouTube');
+    assert.deepEqual(mutations(await page.evaluate(()=>window.__popupFake.calls)),[]);
+    pass('Space on Turn off discovery hides the prompt, retains learned sites and requests no website access');await page.close();
+  }
+  {
+    const page=await openCase({discoveryEnabled:true,discoveryGranted:false,deferDiscoveryUpdate:true});
+    await page.waitForSelector('#discovery-prompt',{visible:true});await page.type('#query','atlas');
+    await page.keyboard.press('ArrowDown');await page.keyboard.press('Enter');
+    await page.waitForFunction(()=>typeof window.__popupFake.completeDiscoveryUpdate==='function');
+    assert.equal(await page.evaluate(()=>document.activeElement.id),'query');
+    await page.keyboard.type(' notes');
+    assert.equal(await page.$eval('#query',element=>element.value),'atlas notes');
+    await page.evaluate(()=>window.__popupFake.completeDiscoveryUpdate());
+    await page.waitForSelector('#discovery-prompt',{hidden:true});
+    assert.equal(await page.$eval('#query',element=>element.value),'atlas notes');
+    assert.equal(await page.evaluate(()=>document.activeElement.id),'query');
+    pass('permission completion restores search focus before a slow initial discovery scan finishes');await page.close();
+  }
   {
     const page=await browser.newPage();await page.goto(origin+'/fixture/discovery',{waitUntil:'load'});
     const source=await readFile(join(root,'site-discovery.js'),'utf8');
@@ -350,8 +533,8 @@ try{
   {
     const page=await openCase({discoveryEnabled:true,discoveryGranted:false,denyDiscovery:true,engines:[{name:'Google'}]});
     await openPreferences(page);await page.waitForFunction(()=>!document.querySelector('#discovery-enabled').disabled);
-    await page.click('#discovery-grant');await page.waitForFunction(()=>!document.querySelector('#discovery-error').hidden&&!document.querySelector('#discovery-enabled').disabled);
-    assert.match(await page.$eval('#discovery-error',element=>element.textContent),/not granted/);
+    await page.click('#discovery-grant');await page.waitForFunction(()=>window.__popupFake.calls.some(call=>call[0]==='permissions-request')&&!document.querySelector('#discovery-enabled').disabled);
+    assert.equal(await page.$eval('#discovery-error',element=>element.hidden),true);
     assert.equal(await page.$eval('#discovery-enabled',element=>element.checked),true);
     assert.equal(await page.$eval('#discovery-grant',element=>element.hidden),false);
     assert.equal(await page.evaluate(()=>window.__popupFake.calls.some(call=>call[0]==='site-search-message'&&call[1].type==='site-search:set-enabled')),false);

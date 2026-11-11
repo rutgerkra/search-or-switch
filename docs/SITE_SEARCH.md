@@ -40,11 +40,19 @@ Do not infer POST searches, JavaScript search behavior, ambiguous forms, or priv
 
 Turning discovery off or revoking HTTP(S) access stops learning while retaining learned definitions. Existing learned searches remain usable. A separate **Clear learned searches** control removes only learned definitions; it leaves the toggle, website-access grants, and Firefox-installed engines unchanged. If discovery remains on with access granted, later visits may learn those sites again.
 
+### Missing-access prompt
+
+When discovery is enabled but website access is missing, show a compact, non-blocking prompt directly below the main search field, with ordinary results still usable beneath it. Use short copy: “Allow website access to discover search shortcuts as you browse.” Place **Allow website access** and **Turn off discovery** next to each other horizontally. Use the panel’s Firefox-style controls, spacing, colors, visible focus indicators, and system light/dark appearance.
+
+Keep the prompt visible across popup openings and permission refusals until access is granted or discovery is turned off. Allow requests Firefox’s native permission dialog directly from the user action; Firefox explains the full permission scope. A deliberate refusal adds no visible error. Unexpected failures show a concise inline error in the prompt. Turning discovery off uses the existing global preference and retains learned searches.
+
+Preserve initial input focus, the authored query, and Tab-to-site behavior. ArrowDown from the search field enters the prompt with **Allow website access** focused. Left/Right switches between its two buttons; Enter/Space activates the focused button. ArrowDown from either button continues to the first result, while ArrowUp returns to the search field with the query intact. ArrowUp from the first result returns to the prompt. Both buttons are also reachable through Tab/Shift+Tab, with no focus trap. After a permission attempt or turning discovery off, restore search-field focus without replacing the authored query.
+
 ## Runtime and data boundaries
 
 Use a Firefox MV3 module event page in `background.js`. Keep site-search state, keyword selection, and safe definition parsing in `site-search.js`; permission-aware discovery and metadata fetching in `site-discovery-service.js`; and injected DOM extraction in `site-discovery.js`.
 
-The extension requires `scripting` and requests optional host access for normal HTTP(S) pages through **Allow website access** in Preferences. The default-on preference alone grants no access and performs no learning. Background fetches are limited to HTTP(S) discovery metadata. The popup retains its own `connect-src 'none'` policy. No remote suggestions, scripts, artwork, or icons are needed.
+The extension requires `scripting` and requests optional host access for normal HTTP(S) pages through **Allow website access** in the main prompt or Preferences. The default-on preference alone grants no access and performs no learning. Background fetches are limited to HTTP(S) discovery metadata. The popup retains its own `connect-src 'none'` policy. No remote suggestions, scripts, artwork, or icons are needed.
 
 Store learned definitions locally: names, keywords, site origins, and reusable templates. Store the discovery preference locally as well. Do not save entered queries, search-query history, entered form values, account/session parameters, full visited URLs, or sync data. Private tabs never contribute learned definitions. The existing bounded browser-supplied favicon cache keeps its separate privacy rules.
 
@@ -57,6 +65,7 @@ Installed Firefox engines remain managed by Firefox. Clearing learned definition
 - Submit installed-engine and learned-site queries with Enter and Cmd/Ctrl+Enter; verify the selected destination, popup dismissal, and existing tab-reuse rules.
 - Keep ordinary default-engine search, tab switching, and no-tab-before-commit behavior intact.
 - Verify discovery is checked by default and performs no learning without page access. Approve **Allow website access**, scan existing normal tabs and future visits, and learn supported OpenSearch and GET-form definitions immediately. Declining must preserve the preference and leave installed engines usable.
+- With access missing, verify the persistent, horizontal main prompt, arrow and Tab navigation, quiet refusals, visible retry errors, and query/focus preservation. Turning discovery off must retain learned searches. Search focus must return after permission completes, including while an initial scan is still pending.
 - Reject unsupported or ambiguous definitions, exclude private tabs, and preserve the documented local-data boundaries.
 - Stop learning on toggle-off or permission revocation; retain learned definitions. Clear only learned definitions, preserve the toggle, grants, and installed engines, and allow later relearning while enabled with access.
 

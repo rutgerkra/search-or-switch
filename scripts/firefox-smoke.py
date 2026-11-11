@@ -362,6 +362,9 @@ try:
     open_popup(parent, parent_tabs, parent_windows)
     enter_popup(parent)
     type_text('Atlas')
+    if script('return !document.getElementById("discovery-prompt").hidden;'):
+        press(DOWN)  # Enter the missing-access prompt.
+        press(DOWN)  # Continue to the first result.
     press(DOWN)
     report = content_state()
     assert 'Project Atlas' in (report.get('selected') or ''), report

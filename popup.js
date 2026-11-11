@@ -239,7 +239,8 @@ function render(preserveSelection = false) {
   const previousIndex = previousKey ? state.rows.findIndex((row) => row.key === previousKey) : -1;
   const selectionLost = state.previewSelection && previousKey && previousKey !== "action" && previousIndex < 0;
   if (selectionLost) state.selectionLost = true;
-  const selection = previousIndex >= 0 ? previousIndex : state.selectionLost ? null : query ? 0 : null;
+  const selection = $("discovery-prompt").contains(document.activeElement) ? null
+    : previousIndex >= 0 ? previousIndex : state.selectionLost ? null : query ? 0 : null;
   const previewSelection = previousIndex >= 0 && state.previewSelection;
   state.selected = selection ?? -1;
   list.replaceChildren(...state.rows.map(makeRow));
@@ -335,7 +336,21 @@ function acceptInput() {
   requestHistory();
   render();
 }
+
+function focusDiscoveryPrompt() {
+  setSelection(null, false, false);
+  $("discovery-prompt-allow").focus();
+}
+
+function focusSearchQuery() {
+  setSelection(state.query.trim() && !state.selectionLost ? 0 : null, false, false);
+  input.focus();
+}
+
 input.addEventListener("input", acceptInput);
+input.addEventListener("focus", () => {
+  if (state.selected < 0 && state.query.trim() && !state.selectionLost) setSelection(0, false, false);
+});
 input.addEventListener("compositionstart", () => { state.composing = true; });
 input.addEventListener("compositionend", () => { state.composing = false; acceptInput(); });
 input.addEventListener("keydown", (event) => {
@@ -349,6 +364,12 @@ input.addEventListener("keydown", (event) => {
   } else if (event.key === "ArrowDown" || event.key === "ArrowUp") {
     event.preventDefault();
     const direction = event.key === "ArrowDown" ? 1 : -1;
+    if (!$("discovery-prompt").hidden && !siteSettingsBusy && (direction > 0
+      ? state.selected < 0 || !state.previewSelection || state.selected === state.rows.length - 1
+      : state.previewSelection && state.selected === 0)) {
+      focusDiscoveryPrompt();
+      return;
+    }
     const next = state.selected < 0 ? direction > 0 ? 0 : state.rows.length - 1 : state.selected + direction;
     setSelection(next, true, true);
   } else if (event.key === "Enter") {
@@ -383,18 +404,41 @@ list.addEventListener("click", (event) => {
 $("clear").addEventListener("click", () => { input.value = ""; acceptInput(); input.focus(); });
 $("site-hint").addEventListener("click", enterSiteSearch);
 $("site-chip").addEventListener("click", () => leaveSiteSearch(state.sitePrefix));
+$("discovery-prompt").addEventListener("focusin", () => setSelection(null, false, false));
+$("discovery-prompt").addEventListener("keydown", (event) => {
+  if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+    event.preventDefault();
+    $(document.activeElement === $("discovery-prompt-allow") ? "discovery-prompt-disable" : "discovery-prompt-allow").focus();
+  } else if (event.key === "ArrowUp") {
+    event.preventDefault();
+    focusSearchQuery();
+  } else if (event.key === "ArrowDown") {
+    event.preventDefault();
+    input.focus();
+    setSelection(0, true, true);
+  }
+});
 
 function showDiscoveryError(message = "") {
-  $("discovery-error").textContent = message;
-  $("discovery-error").hidden = !message;
+  for (const id of ["discovery-error", "discovery-prompt-error"]) {
+    $(id).textContent = message;
+    $(id).hidden = !message;
+  }
 }
 
 function updateDiscoverySettings() {
+  const promptFocused = $("discovery-prompt").contains(document.activeElement);
+  const needsWebsiteAccess = discoveryAvailable && discoverySnapshot.enabled && !discoverySnapshot.permitted;
+  const accessRequestDisabled = siteSettingsBusy || !preview && typeof api.permissions?.request !== "function";
   $("discovery-enabled").checked = discoverySnapshot.enabled;
-  $("discovery-enabled").disabled = siteSettingsBusy || !discoveryAvailable || !preview && typeof api.permissions?.request !== "function";
+  $("discovery-enabled").disabled = accessRequestDisabled || !discoveryAvailable;
   $("discovery-clear").disabled = siteSettingsBusy || !discoveryAvailable || !discoverySnapshot.learned.length;
-  $("discovery-grant").hidden = !discoveryAvailable || !discoverySnapshot.enabled || discoverySnapshot.permitted;
-  $("discovery-grant").disabled = siteSettingsBusy || !preview && typeof api.permissions?.request !== "function";
+  $("discovery-grant").hidden = !needsWebsiteAccess;
+  $("discovery-grant").disabled = accessRequestDisabled;
+  $("discovery-prompt").hidden = !needsWebsiteAccess;
+  $("discovery-prompt-allow").disabled = accessRequestDisabled;
+  $("discovery-prompt-disable").disabled = siteSettingsBusy;
+  if ($("discovery-prompt").hidden && promptFocused && $("settings").hidden) focusSearchQuery();
   const count = discoverySnapshot.learned.length;
   $("discovery-status").textContent = siteSettingsBusy ? "Updating site searches…"
     : !discoveryAvailable ? "Automatic discovery is unavailable. Firefox-installed searches still work."
@@ -421,11 +465,13 @@ async function discoveryOperation(operation) {
   }
 }
 
-function setDiscoveryEnabled(enabled) {
+function setDiscoveryEnabled(enabled, fromPrompt = false) {
   return discoveryOperation(async () => {
     // Invoke the permission prompt directly in this user gesture, before messaging.
-    if (enabled && !preview && !await api.permissions.request(SITE_SEARCH_PERMISSIONS)) {
-      throw new Error("Website access was not granted. No new sites will be learned.");
+    if (enabled && !preview) {
+      const granted = await api.permissions.request(SITE_SEARCH_PERMISSIONS);
+      if (fromPrompt && !disposed && $("settings").hidden) focusSearchQuery();
+      if (!granted) return discoverySnapshot;
     }
     return preview ? { ...discoverySnapshot, enabled, permitted: enabled || discoverySnapshot.permitted }
       : api.runtime.sendMessage({ type: "site-search:set-enabled", enabled });
@@ -435,6 +481,12 @@ $("discovery-enabled").addEventListener("change", (event) => {
   void setDiscoveryEnabled(event.currentTarget.checked);
 });
 $("discovery-grant").addEventListener("click", () => { void setDiscoveryEnabled(true); });
+async function setDiscoveryFromPrompt(enabled) {
+  await setDiscoveryEnabled(enabled, true);
+  if (!disposed && $("settings").hidden) focusSearchQuery();
+}
+$("discovery-prompt-allow").addEventListener("click", () => { void setDiscoveryFromPrompt(true); });
+$("discovery-prompt-disable").addEventListener("click", () => { void setDiscoveryFromPrompt(false); });
 $("discovery-clear").addEventListener("click", () => {
   void discoveryOperation(() => preview ? { ...discoverySnapshot, learned: [] } : api.runtime.sendMessage({ type: "site-search:clear" }));
 });
@@ -634,12 +686,15 @@ async function initialize() {
 }
 
 function applyDiscoverySnapshot(snapshot) {
-  discoveryAvailable = typeof snapshot?.enabled === "boolean" && typeof snapshot?.permitted === "boolean" && Array.isArray(snapshot?.learned);
-  if (discoveryAvailable) discoverySnapshot = {
-    enabled: snapshot?.enabled === true,
-    permitted: snapshot?.permitted === true,
-    learned: (Array.isArray(snapshot?.learned) ? snapshot.learned : []).map((site) => createDiscoveredSite(site)).filter(Boolean),
-  };
+  // Keep confirmed settings available for retry after a transient message failure.
+  if (typeof snapshot?.enabled === "boolean" && typeof snapshot?.permitted === "boolean" && Array.isArray(snapshot?.learned)) {
+    discoveryAvailable = true;
+    discoverySnapshot = {
+      enabled: snapshot.enabled,
+      permitted: snapshot.permitted,
+      learned: snapshot.learned.map((site) => createDiscoveredSite(site)).filter(Boolean),
+    };
+  }
   refreshSiteSearchPresentation();
 }
 
