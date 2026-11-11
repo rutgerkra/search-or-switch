@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Search or Switch",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "A keyboard-first Firefox popup to switch tabs, open an address, or search. A new tab only when you commit.",
   "permissions": [
     "tabs",

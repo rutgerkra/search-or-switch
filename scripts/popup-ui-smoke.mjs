@@ -450,7 +450,7 @@ try{
   {
     const page=await openCase({engines:[{name:'YouTube',alias:'!yt'}]});
     await page.type('#query','you');
-    await page.waitForFunction(()=>!document.querySelector('#site-hint')?.hidden&&document.querySelector('#site-hint')?.textContent.includes('YouTube'));
+    await page.waitForFunction(()=>!document.querySelector('#site-hint')?.hidden&&document.querySelector('#site-hint')?.getAttribute('aria-label').includes('YouTube'));
     assert.deepEqual(mutations(await page.evaluate(()=>window.__popupFake.calls)),[]);
     await page.keyboard.press('Tab');
     assert.equal(await page.$eval('#site-chip',element=>element.hidden),false);
@@ -485,7 +485,7 @@ try{
     await page.evaluate(()=>window.__popupFake.updateTab(20,{title:'YouTube open tab'}));
     await page.type('#query','you');await page.waitForFunction(()=>!document.querySelector('#site-hint').hidden);
     await page.keyboard.press('ArrowDown');
-    assert.equal(await page.$eval('#site-hint',element=>element.textContent.includes('YouTube')),true);
+    assert.equal(await page.$eval('#site-hint',element=>element.getAttribute('aria-label').includes('YouTube')),true);
     await page.keyboard.press('Tab');await page.type('#query','cats & dogs');
     await page.keyboard.down('Control');await page.keyboard.press('Enter');await page.keyboard.up('Control');await waitClosed(page);
     assert.deepEqual(mutations(await page.evaluate(()=>window.__popupFake.calls)),[['update',10,{url:'https://www.youtube.com/results?search_query=cats%20%26%20dogs'}]]);
@@ -506,7 +506,7 @@ try{
     assert.equal(await page.$eval('#discovery-enabled',element=>element.checked),true);
     await page.click('#settings-close');assert.equal(await page.$eval('#site-hint',element=>element.hidden),true);
     await page.click('#clear');await page.type('#query','goo');await page.waitForFunction(()=>!document.querySelector('#site-hint').hidden);
-    assert.equal(await page.$eval('#site-hint',element=>element.textContent.includes('Google')),true);
+    assert.equal(await page.$eval('#site-hint',element=>element.getAttribute('aria-label').includes('Google')),true);
     const calls=await page.evaluate(()=>window.__popupFake.calls);
     assert.deepEqual(calls.filter(call=>call[0]==='permissions-request').map(call=>call[1]),[{origins:['http://*/*','https://*/*']},{origins:['http://*/*','https://*/*']}]);
     assert.deepEqual(mutations(calls),[]);

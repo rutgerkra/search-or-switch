@@ -35,8 +35,8 @@ main { margin: 0; flex: 1; min-height: 0; display: flex; flex-direction: column;
 .input-icon svg, .input-icon img { display: block; width: 16px; height: 16px; object-fit: contain; }
 #query { min-width: 0; flex: 1; width: 100%; padding: 0; border: 0; outline: 0; background: transparent; color: var(--text); font-size: 13px; line-height: 20px; }
 #query::placeholder { color: var(--secondary); opacity: 1; }
-.site-hint { display: flex; align-items: center; gap: 6px; max-width: 48%; flex-shrink: 0; padding: 3px 5px; border: 0; border-radius: 3px; background: var(--hover); color: var(--secondary); font-size: 11px; }
-.site-hint span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.site-hint { display: flex; align-items: center; gap: 6px; flex-shrink: 0; padding: 3px 5px; border: 0; border-radius: 3px; background: var(--hover); color: var(--secondary); font-size: 11px; }
+.site-hint svg { display: block; width: 14px; height: 14px; flex-shrink: 0; fill: none; stroke: currentColor; stroke-width: 1.5; }
 .site-hint kbd { font: inherit; padding: 0 3px; border: 1px solid var(--border); border-radius: 3px; }
 .site-hint:hover { background: var(--selected); color: var(--text); }
 .site-chip { max-width: 40%; flex-shrink: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 3px 7px; border: 1px solid var(--border); border-radius: 4px; background: var(--selected); font-size: 11px; }
@@ -53,6 +53,7 @@ main { margin: 0; flex: 1; min-height: 0; display: flex; flex-direction: column;
 .result-title { font-size: 13px; line-height: 19px; font-weight: 400; }
 .result-description { font-size: 11px; line-height: 16px; color: var(--secondary); }
 .result-meta { flex-shrink: 0; display: flex; align-items: center; gap: 9px; color: var(--secondary); font-size: 11px; }
+.tab-switch-icon { display: block; width: 16px; height: 16px; flex-shrink: 0; stroke-linecap: round; stroke-linejoin: round; }
 .selected-arrow { visibility: hidden; font-size: 13px; width: 12px; }
 .result[aria-selected="true"] .selected-arrow { visibility: visible; }
 .action-result { margin-top: 7px; }

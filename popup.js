@@ -64,7 +64,11 @@ function icon(kind) {
   svg.setAttribute("stroke-width", "1.5");
   svg.setAttribute("aria-hidden", "true");
   const path = document.createElementNS(svg.namespaceURI, "path");
-  path.setAttribute("d", kind === "url" ? "M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0ZM3 12h18M12 3a18 18 0 0 1 0 18 18 18 0 0 1 0-18Z" : "m16 16 5 5M18 10a8 8 0 1 1-16 0 8 8 0 0 1 16 0");
+  path.setAttribute("d", {
+    url: "M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0ZM3 12h18M12 3a18 18 0 0 1 0 18 18 18 0 0 1 0-18Z",
+    search: "m16 16 5 5M18 10a8 8 0 1 1-16 0 8 8 0 0 1 16 0",
+    switch: "M4 8h16m-4-4 4 4-4 4M20 16H4m4-4-4 4 4 4",
+  }[kind]);
   svg.append(path);
   return svg;
 }
@@ -148,6 +152,11 @@ function makeRow(row, index) {
   copy.append(title);
   if (description.textContent) copy.append(description);
   if (metaLabel.textContent) meta.append(metaLabel);
+  if (row.type === "tab") {
+    const switchIcon = icon("switch");
+    switchIcon.classList.add("tab-switch-icon");
+    meta.append(switchIcon);
+  }
   meta.append(arrow);
   el.append(siteIcon, copy, meta);
   return el;
@@ -168,8 +177,9 @@ function updateInputPresentation() {
   paintSiteIcon(queryIcon, website ? "url" : "search", website ? presentation.url : undefined, row?.tab?.favIconUrl);
   const hint = state.site ? null : matchSiteSearch(searchSites, state.query);
   $("site-hint").hidden = !hint;
-  $("site-hint-label").textContent = hint ? `Search ${hint.name}` : "";
-  $("site-hint").setAttribute("aria-label", hint ? `Search ${hint.name}, press Tab` : "Search a site");
+  const hintLabel = hint ? `Search ${hint.name}, press Tab` : "Search a site";
+  $("site-hint").setAttribute("aria-label", hintLabel);
+  $("site-hint").title = hintLabel;
   $("site-chip").hidden = !state.site;
   $("site-chip").textContent = state.site?.name ?? "";
   $("site-chip").setAttribute("aria-label", state.site ? `Leave ${state.site.name} search` : "Leave site search");
