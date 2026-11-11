@@ -26,6 +26,7 @@ button:disabled { cursor: default; opacity: .5; }
 button:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 main { margin: 0; flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .search-view, .settings-view { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.search-view { position: relative; --settings-button-size: 40px; --settings-button-inset: 12px; --settings-clearance: calc(var(--settings-button-size) + var(--settings-button-inset) + 12px); }
 .palette { display: flex; flex-direction: column; flex: 1; min-height: 0; }
 .palette { background: var(--panel); }
 .search-bar { margin: 12px 12px 8px; padding: 8px 10px; display: flex; align-items: center; gap: 8px; border: 1px solid var(--border); border-radius: 4px; background: var(--field); }
@@ -36,7 +37,7 @@ main { margin: 0; flex: 1; min-height: 0; display: flex; flex-direction: column;
 #query::placeholder { color: var(--secondary); opacity: 1; }
 .clear-button { display: flex; justify-content: center; align-items: center; width: 20px; height: 20px; border: 0; border-radius: 3px; padding: 0; background: transparent; color: var(--secondary); font-size: 20px; }
 .clear-button:hover { background: var(--hover); }
-.results { flex: 1; min-height: 0; overflow-y: auto; scrollbar-width: thin; padding: 0 6px 6px; }
+.results { flex: 1; min-height: 0; overflow-y: auto; scrollbar-width: thin; padding: 0 6px var(--settings-clearance); scroll-padding-bottom: var(--settings-clearance); }
 .result { display: flex; align-items: center; gap: 10px; min-height: 46px; padding: 6px 10px; margin: 2px 0; border: 1px solid transparent; border-radius: 4px; cursor: pointer; user-select: none; }
 .result:hover { background: var(--hover); }
 .result[aria-selected="true"] { background: var(--selected); }
@@ -53,8 +54,9 @@ main { margin: 0; flex: 1; min-height: 0; display: flex; flex-direction: column;
 .action-result:only-child { margin-top: 2px; }
 .empty-state { padding: 18px 16px 24px; margin: 0; color: var(--secondary); font-size: 12px; text-align: center; line-height: 1.5; }
 .error { margin: 4px 12px 10px; padding: 9px 10px; color: var(--error); background: color-mix(in srgb, var(--error) 8%, transparent); border: 1px solid color-mix(in srgb, var(--error) 35%, transparent); border-radius: 4px; font-size: 12px; line-height: 1.5; }
-.page-footer { display: flex; justify-content: flex-end; align-items: center; padding: 8px 12px; border-top: 1px solid var(--separator); }
-.settings-button { padding: 6px 10px; border: 1px solid var(--border); border-radius: 4px; background: var(--hover); color: var(--secondary); font-size: 11px; }
+.empty-state:not([hidden]), .error:not([hidden]) { margin-bottom: var(--settings-clearance); }
+.settings-button { position: absolute; right: var(--settings-button-inset); bottom: var(--settings-button-inset); display: flex; align-items: center; justify-content: center; width: var(--settings-button-size); height: var(--settings-button-size); padding: 10px; border: 1px solid var(--border); border-radius: 50%; background: var(--panel); color: var(--secondary); box-shadow: 0 2px 6px light-dark(#0002, #0005); }
+.settings-button svg { display: block; width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
 .settings-button:hover { background: var(--selected); color: var(--text); }
 .settings-button:active { background: var(--border); }
 .settings-heading { display: flex; align-items: center; flex-shrink: 0; gap: 8px; min-height: 60px; padding: 12px; border-bottom: 1px solid var(--separator); }
